@@ -1,14 +1,14 @@
 # Kivro
 ## Trademark
 
-Le nom **Kivro**, son logo et son identité visuelle sont des marques de [Ton Nom / Organisation].
+The name **Kivro**, its logo, and its visual identity are trademarks of LG-IA ResearchLab.
 
-- Le code source est distribué sous double licence **Apache 2.0 / MPL 2.0** (au choix).
-- Vous pouvez librement utiliser et modifier le code, et créer des dérivés.
-- ⚠️ Vous ne pouvez pas utiliser le nom **Kivro** ou son logo pour un projet modifié
-  ou un produit commercial sans autorisation écrite.
-- Les forks doivent utiliser un autre nom/branding. Les mentions d’origine
-  (par ex. *“fork de Kivro”*) sont autorisées tant qu’elles ne créent pas
-  de confusion avec le projet officiel.
+- The source code is distributed under a dual license: **Apache 2.0 / MPL 2.0** (your choice).
+- You are free to use and modify the code, and to create derivative works.
+- ⚠️ You may not use the name **Kivro** or its logo for a modified project
+  or a commercial product without prior written permission.
+- Forks must use a different name/branding. References to the original
+  (e.g., *“fork of Kivro”*) are allowed as long as they do not create
+  confusion with the official project.
 
-Pour toute demande concernant la marque **Kivro** : [ton email / site].
+For any inquiries regarding the **Kivro** trademark: contact@lg-ia-researchlab.fr
