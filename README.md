@@ -33,12 +33,6 @@ Then open http://localhost:8000
 Make sure Ollama is installed and that you have at least one model available
 (for example: ollama pull phi4:latest).
 ---
-
-👉 Avec ça, ton `README.md` sera propre, complet et lisible.  
-
-Veux-tu que je te propose aussi un petit **badge GitHub Actions** (par exemple pour CI ou “WIP”) à placer en haut du README pour donner un look plus “pro” ?
-
-
 ## Roadmap
 
 - [x] Basic UI with Ollama integration
