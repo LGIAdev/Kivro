@@ -1,5 +1,11 @@
 # Kivro
 
+![Status](https://img.shields.io/badge/status-WIP-blue)
+![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20MPL--2.0-green)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/LGIAdev/Kivro?sort=semver)
+![Issues](https://img.shields.io/github/issues/LGIAdev/Kivro)
+![Pull Requests](https://img.shields.io/github/issues-pr/LGIAdev/Kivro)
+
 Kivro is a lightweight local-first interface for running and managing multiple AI models via [Ollama](https://ollama.com), 
 with math rendering (KaTeX), Markdown tables, and a clean UI.
 
