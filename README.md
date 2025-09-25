@@ -1,4 +1,8 @@
 # Kivro
+
+Kivro is a lightweight local-first interface for running and managing multiple AI models via [Ollama](https://ollama.com), 
+with math rendering (KaTeX), Markdown tables, and a clean UI.
+
 ## Trademark
 
 The name **Kivro**, its logo, and its visual identity are trademarks of LG-IA ResearchLab.
@@ -12,3 +16,34 @@ The name **Kivro**, its logo, and its visual identity are trademarks of LG-IA Re
   confusion with the official project.
 
 For any inquiries regarding the **Kivro** trademark: contact@lg-ia-researchlab.fr
+
+## Quickstart
+
+Clone the repository and run Kivro locally:
+
+```bash
+git clone https://github.com/LGIAdev/Kivro.git
+cd Kivro
+
+Start a local web server (example with Python):
+python -m http.server 8000
+
+Then open http://localhost:8000
+
+Make sure Ollama is installed and that you have at least one model available
+(for example: ollama pull phi4:latest).
+---
+
+👉 Avec ça, ton `README.md` sera propre, complet et lisible.  
+
+Veux-tu que je te propose aussi un petit **badge GitHub Actions** (par exemple pour CI ou “WIP”) à placer en haut du README pour donner un look plus “pro” ?
+
+
+## Roadmap
+
+- [x] Basic UI with Ollama integration
+- [x] Markdown + KaTeX rendering
+- [ ] OCR (image → text)
+- [ ] Voice input/output
+- [ ] Conversation history
+- [ ] GitHub Pages demo
