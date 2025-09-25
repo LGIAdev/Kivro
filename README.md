@@ -33,6 +33,7 @@ Then open http://localhost:8000
 Make sure Ollama is installed and that you have at least one model available
 (for example: ollama pull phi4:latest).
 ---
+
 ## Roadmap
 
 - [x] Basic UI with Ollama integration
