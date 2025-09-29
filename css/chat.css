@@ -1,0 +1,162 @@
+/* Conteneur Markdown */
+.markdown-body {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text); /* gris clair lisible sur fond sombre */
+}
+
+/* Titres */
+.markdown-body h1 {
+  margin: 0.8em 0 0.1em;
+  font-weight: 700;   /* plus gras */
+  line-height: 1.3;
+}
+
+.markdown-body h2 {
+  margin: 0.8em 0 0.1em;
+  font-weight: 500;   /* semi-gras */
+  line-height: 1.3;
+}
+
+.markdown-body h3 {
+  margin: 0.8em 0 0.1em;
+  font-weight: 500;   /* semi-gras */
+  line-height: 1.3;
+}
+.markdown-body h1 { font-size: 1.8em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.05em; }
+
+/* Paragraphes */
+.markdown-body p {
+  margin: 0.1em 0;
+}
+
+/* Listes */
+.markdown-body ul {
+  margin: 0.4em 0 0.8em 1.4em;
+  padding: 0;
+}
+.markdown-body li {
+  margin: 0.25em 0;
+}
+
+/* Code inline */
+.markdown-body code {
+  background: #1e293b;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, monospace;
+}
+
+/* Blocs de code */
+.markdown-body pre {
+  background: #0f172a;
+  padding: 0.8em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.95em;
+}
+
+/* Personnalisation de la ligne séparatrice Markdown */
+.markdown-body hr {
+  border: 0;
+  border-top: 0,7px solid var(--border); /* ou autre épaisseur */
+  margin: 1em 0;
+}
+
+/* ===== Kivro — Tables style “carte” (exemple.png) ===== */
+:root[data-theme="dark"]{
+  --kivro-tbl-bg:#0b1220;     /* fond carte */
+  --kivro-tbl-head:#1a2337;   /* en-tête */
+  --kivro-tbl-col1:#101a2b;   /* 1re colonne */
+  --kivro-tbl-sep:#22314a;    /* séparateurs */
+  --kivro-tbl-text:#e5e7eb;   /* texte */
+  --kivro-tbl-muted:#9aa4b2;  /* texte atténué */
+  --kivro-tbl-shadow:0 12px 30px rgba(2,6,23,.35);
+}
+:root[data-theme="light"]{
+  --kivro-tbl-bg:#ffffff;
+  --kivro-tbl-head:#eef2f7;
+  --kivro-tbl-col1:#f7f9fc;
+  --kivro-tbl-sep:#e2e8f0;
+  --kivro-tbl-text:#000000;
+  --kivro-tbl-muted:#475569;
+  --kivro-tbl-shadow:0 10px 24px rgba(2,6,23,.08);
+}
+
+/* Carte + wrapper (coins arrondis, ombre, bord) */
+.messages .md .md-table-wrap{
+  margin: 1rem 0 1.25rem;
+  border-radius: 16px;
+  background: var(--kivro-tbl-bg);
+  box-shadow: var(--kivro-tbl-shadow);
+  border: 1px solid var(--kivro-tbl-sep);
+  overflow: clip; /* masque proprement les coins */
+}
+
+/* Table interne */
+.messages .md .md-table-wrap table{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--kivro-tbl-text);
+  font-size: .98rem;
+}
+
+/* En-tête (collant discret) */
+.messages .md .md-table-wrap thead th{
+  background: var(--kivro-tbl-head);
+  font-weight: 600;
+  padding: .9rem 1rem;
+  letter-spacing: .2px;
+  border-bottom: 1px solid var(--kivro-tbl-sep);
+  position: sticky; top: 0; z-index: 1;
+  backdrop-filter: saturate(120%) blur(4px);
+}
+/* Coins supérieurs arrondis */
+.messages .md .md-table-wrap thead th:first-child{ border-top-left-radius: 16px; }
+.messages .md .md-table-wrap thead th:last-child{  border-top-right-radius: 16px; }
+
+/* 1re colonne mise en valeur */
+.messages .md .md-table-wrap thead th:first-child,
+.messages .md .md-table-wrap tbody td:first-child{
+  background: var(--kivro-tbl-col1);
+}
+
+/* Cellules */
+.messages .md .md-table-wrap tbody td{
+  padding: .95rem 1rem;
+  border-top: 1px solid var(--kivro-tbl-sep);
+  vertical-align: middle;
+}
+
+/* Zébrage très subtil hors 1re colonne */
+.messages .md .md-table-wrap tbody tr:nth-child(odd) td:not(:first-child){
+  background: color-mix(in srgb, var(--kivro-tbl-text) 4%, transparent);
+}
+
+/* Coins inférieurs arrondis */
+.messages .md .md-table-wrap tbody tr:last-child td:first-child{ border-bottom-left-radius: 16px; }
+.messages .md .md-table-wrap tbody tr:last-child td:last-child{  border-bottom-right-radius: 16px; }
+
+/* Badges (texte entre `backticks`) sous le tableau */
+.messages .md p code{
+  display:inline-block;
+  padding:.35rem .7rem;
+  border-radius:999px;
+  border:1px solid var(--kivro-tbl-sep);
+  background: var(--kivro-tbl-col1);
+  color: var(--kivro-tbl-text);
+  font-weight:500; font-size:.9em;
+  margin-right:.4rem;
+}
+.messages .md .muted{ color: var(--kivro-tbl-muted); font-size:.95rem; }
+.messages .md table{ outline:3px solid #10b981 !important; }
+
