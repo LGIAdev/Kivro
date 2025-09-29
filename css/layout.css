@@ -1,0 +1,38 @@
+.app{display:grid; grid-template-columns:280px 1fr; height:100vh; overflow:hidden}
+.sidebar{ background:linear-gradient(180deg, var(--panel), var(--panel-2)); border-right:1px solid var(--border); display:flex; flex-direction:column; min-width:240px; }
+.side-head{ display:flex; flex-direction:column; align-items:stretch; gap:.6rem; padding:16px 18px; border-bottom:1px solid var(--border); }
+.brand-left{ font-weight:700; letter-spacing:.02em; font-size:1.05rem; color:var(--text); }
+.btn{ background:#0e131c; color:var(--text); border:1px solid var(--border); padding:8px 10px; border-radius:10px; cursor:pointer; font-size:.95rem; }
+.btn:hover{ background:var(--hover); }
+.side-search{ padding:12px 16px; border-bottom:1px solid var(--border); }
+.side-search input{ width:100%; padding:10px 12px; border-radius:10px; background:#0c1018; border:1px solid var(--border); color:var(--text); }
+.side-section{ padding:10px 8px; flex:1; overflow:auto; }
+.side-title{ color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; padding:8px 10px; }
+.conv{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:10px; color:var(--text); text-decoration:none; }
+.conv:hover{ background:var(--hover); }
+.conv .ico{ width:18px; height:18px; opacity:.8 }
+.conv.selected{ background: var(--sel-bg) !important; color: var(--sel-fg) !important; }
+.conv.selected .ico{ color: currentColor; opacity: 1; }
+.user-menu{ display:none; padding:6px 8px; border-top:1px solid var(--border) }
+.user-menu.open{ display:block }
+.side-footer{ margin-top:auto; padding:14px; border-top:1px solid var(--border); color:var(--muted); display:flex; align-items:center; gap:.6rem; cursor:pointer }
+.side-footer:focus{ outline:2px solid var(--accent); outline-offset:2px }
+.main{ position:relative; overflow:auto }
+.topbar{ display:flex; align-items:center; gap:.8rem; padding:14px 18px; border-bottom:1px solid var(--border); min-height:48px }
+.center{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:7vh; gap:18px }
+.logo{ height:48px; padding:0 16px; border-radius:999px; background:#0c1119; border:1px solid var(--border); display:grid; place-items:center }
+.logo span{ font-weight:700; letter-spacing:.02em }
+.composer-wrap{ display:flex; justify-content:center; padding:26px 18px }
+.composer{ width:min(960px, 90vw); background:#0c1119; border:1.5px solid rgba(110,168,254,.5); border-radius:16px; padding:12px; position:relative; box-shadow:0 6px 20px rgba(0,0,0,.25) }
+.composer .row{ display:flex; align-items:center; gap:10px }
+.composer textarea{ flex:1; resize:none; min-height:22px; max-height:38vh; overflow:auto; background:transparent; border:0; outline:0; color:var(--text); font-size:1rem; padding:10px 6px }
+.icons{ display:flex; align-items:center; gap:12px }
+.icon-btn{ width:34px; height:34px; border-radius:10px; border:1px solid var(--border); background:#0e131c; display:grid; place-items:center; cursor:pointer; color:var(--text); }
+.icon-btn:hover{ background:var(--hover) }
+.icon-btn svg{ width:20px; height:20px }
+.icon-btn.add-visible{ position: relative; border-color:var(--chip-border); box-shadow: inset 0 0 0 1px rgba(110,168,254,.35); }
+.icon-btn.add-visible::before,.icon-btn.add-visible::after{ content:""; position:absolute; left:50%; top:50%; background: currentColor; opacity:.9; transform:translate(-50%,-50%) }
+.icon-btn.add-visible::before{ width:2px; height:14px; border-radius:1px }
+.icon-btn.add-visible::after{ width:14px; height:2px; border-radius:1px }
+.chips{ display:flex; gap:10px; padding:10px 2px 4px 42px; flex-wrap:wrap }
+.chip{ padding:6px 10px; border-radius:999px; background:var(--chip); border:1px solid var(--chip-border); color:var(--muted); font-size:.85rem; cursor:pointer; }
