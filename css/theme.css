@@ -1,0 +1,68 @@
+:root{
+  --bg:#0f1115; --panel:#000000; --panel-2:#0b0d12; --border:#1b1f2a;
+  --text:#e6e9ef; --muted:#9aa3b2; --accent:#6ea8fe; --chip:#1b2230;
+  --chip-border:#26344a; --hover:#151924; --green:#a5f3c7;
+}
+:root[data-theme="light"]{
+  --bg:#f8fafc; --panel:#ffffff; --panel-2:#f2f5f9; --border:#d9e1ea;
+  --text:#000000; --muted:#475569; --accent:#2563eb; --chip:#eef2f7;
+  --chip-border:#d8e0ea; --hover:#edf2f7; --green:#0f9d58;
+}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans";
+  -webkit-font-smoothing:antialiased; line-height:1.45;
+}
+/* Patches light (logo/composer/sidebar/prompt/add) */
+:root[data-theme="light"] .logo{ background:#0c1119; color:#fff; border:1px solid #1b2230; }
+:root[data-theme="light"] .logo span{ color:#fff; }
+
+/* Composer corrigé */
+:root[data-theme="light"] .composer-card{ background:#0c1119; border-color:#26344a; }
+
+/* Titre "Entrez votre question" */
+:root[data-theme="light"] .composer-header > div:first-child{ color:#e5e7eb; opacity:.9; }
+
+/* Zone de saisie */
+:root[data-theme="light"] .composer-input{
+  background:#0e131c;
+  color:#fff;
+  border-color:#26344a;
+  caret-color:#fff;
+}
+:root[data-theme="light"] .composer-input::placeholder{ color:rgba(255,255,255,.75); }
+
+/* Icônes micro / casque / envoyer */
+:root[data-theme="light"] .composer-card .icon-btn{
+  color:#fff;
+  background:#131722;
+  border-color:#26344a;
+}
+:root[data-theme="light"] .composer-card .icon-btn svg{
+  stroke:currentColor;
+  fill:none;
+}
+
+/* Chip "Interpréteur de code" */
+:root[data-theme="light"] .composer-card .chip{
+  background:#131723;
+  border-color:#26344a;
+  color:#cbd5e1;
+}
+
+:root[data-theme="light"] .side-head .btn{ color:#fff; background:#0e131c; border-color:#26344a; }
+:root[data-theme="light"] .side-head .btn:hover{ background:#131722; }
+:root[data-theme="light"] .side-search input{ color:#fff; background:#0e131c; border-color:#26344a; }
+:root[data-theme="light"] .side-search input::placeholder{ color:rgba(255,255,255,.8); }
+:root[data-theme="light"] #prompt-modal .settings-card{ background:#fff; color:var(--text); border-color:var(--border); }
+:root[data-theme="light"] #prompt-modal .settings-head{ border-bottom:1px solid var(--border); }
+:root[data-theme="light"] #prompt-modal .settings-tab{ background:#eef2f7; border-color:#d8e0ea; color:#0b1220; }
+:root[data-theme="light"] #prompt-modal #prompt-text{ background:#fff !important; color:#0b1220; border-color:#d9e1ea; }
+:root[data-theme="light"] #prompt-modal #prompt-text::placeholder{ color:#64748b; opacity:1; }
+:root[data-theme="light"] #prompt-modal .icon-btn{ background:#131722; border-color:#26344a; color:#fff; }
+:root[data-theme="light"] #add-modal .modal-card{ background:#fff; color:#0b1220; border-color:#d9e1ea; }
+/* Selection state */
+:root{ --sel-bg: var(--hover); --sel-fg: var(--text); }
+:root[data-theme="dark"]{ --sel-bg:#1c2533; --sel-fg:#e6e9ef; }
+:root[data-theme="light"]{ --sel-bg:#0e131c; --sel-fg:#ffffff; }
