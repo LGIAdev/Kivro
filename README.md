@@ -6,87 +6,138 @@
 ![Issues](https://img.shields.io/github/issues/LGIAdev/Kivro)
 ![Pull Requests](https://img.shields.io/github/issues-pr/LGIAdev/Kivro)
 
-Kivro is an open-source interface for running and managing multiple AI models locally via [Ollama](https://ollama.com/).  
-It provides a clean UI with support for math rendering (KaTeX), code execution, and conversation history.
+Kivro is an open-source interface for running and managing AI models locally via [Ollama](https://ollama.com/).
+It provides a desktop-style web UI with math rendering, local conversation history, and a fully local persistence layer.
 
-Status: Project under development (Work In Progress).
-The API, file structure, and features may still change significantly.
+Status: project under active development.
 
-------------------------------------------------------------
+---
 
-## Goal
+## Current features
 
-Kivro is a lightweight user interface to interact with different AI models through Ollama.
-It focuses on:
+- Local Ollama integration
+- Dark/light theme support
+- Markdown rendering with KaTeX
+- Conversation history in the left sidebar
+- Persistent local storage of conversations in SQLite
+- Rename and delete actions for conversation links
+- Local Python backend serving both the UI and the API
 
-- Enhanced Markdown rendering (titles, lists, quotes)
-- Mathematical formulas with KaTeX
-- GFM tables converted into clean HTML
-- Dark/Light themes switch
-- Multi-model support: select your AI model dynamically
+---
 
-------------------------------------------------------------
+## Local architecture
+
+Kivro now runs as a local application made of:
+
+- a local Python server
+- a local SQLite database
+- a browser UI served from the same local server
+
+Conversation data is stored locally in:
+
+`data/kivro.db`
+
+No cloud database is used for conversation history.
+
+---
 
 ## Quickstart
 
-Clone the repository and run Kivro locally:
+### Windows
 
-git clone https://codeberg.org/LG-IALab/Kivro.git
-cd Kivro
+Run:
 
-Start a local web server (example with Python):
+```powershell
+.\start-kivro.bat
+```
 
-python -m http.server 8000
-Then open http://localhost:8000 in your browser.
+Then open:
 
-Make sure Ollama is installed and that you have at least one model available
-(for example: ollama pull phi4:latest).
+[http://127.0.0.1:8000/index.html](http://127.0.0.1:8000/index.html)
 
-------------------------------------------------------------
+### Manual start
+
+```powershell
+cd "$env:USERPROFILE\Documents\Kivro"
+py server\app.py --host 127.0.0.1 --port 8000
+```
+
+Then open:
+
+[http://127.0.0.1:8000/index.html](http://127.0.0.1:8000/index.html)
+
+Make sure Ollama is installed locally and running, for example on:
+
+`http://127.0.0.1:11434`
+
+---
+
+## Conversation history
+
+Kivro stores conversations locally in SQLite and rebuilds the left sidebar from the database at startup.
+
+Supported behavior:
+
+- reopen a saved conversation from the sidebar
+- keep conversations after closing the interface
+- keep conversations after a PC restart
+- rename a conversation link
+- delete a conversation link
+
+Logging out of the interface no longer clears persistent conversation history.
+
+---
+
+## Project structure
+
+- `index.html`: main UI
+- `js/`: frontend logic
+- `server/`: local API and SQLite access
+- `css/`: styles
+- `data/kivro.db`: local conversation database
+
+---
 
 ## Roadmap
 
 - [x] Basic UI with Ollama integration
 - [x] Markdown + KaTeX rendering
-- [ ] OCR (image → text)
+- [x] Local conversation history
+- [x] SQLite persistence
+- [x] Sidebar rename/delete actions
+- [ ] OCR
 - [ ] Voice input/output
-- [ ] Conversation history
 - [ ] GitHub Pages demo
 
-------------------------------------------------------------
+---
 
 ## Contributing
 
-Contributions are welcome!
-For now, please:
+Contributions are welcome.
+
+Recommended flow:
 
 1. Fork the project
-2. Create a branch feature/...
-3. Submit a Pull Request
+2. Create a branch
+3. Open a Pull Request
 
-See also CONTRIBUTING.md.
+See also `CONTRIBUTING.md`.
 
-------------------------------------------------------------
+---
 
 ## License
 
-The source code is distributed under a dual license: Apache 2.0 / MPL 2.0 (your choice).
-You are free to choose the license that best suits your needs.
+The source code is distributed under a dual license: Apache 2.0 / MPL 2.0.
 
-See LICENSE.
+See `LICENSE`.
 
-------------------------------------------------------------
+---
 
 ## Trademark notice
 
 The name Kivro, its logo, and its visual identity are trademarks of LG-IA ResearcherLab.
 
-- You may not use the name Kivro or its logo for a modified project
-or a commercial product without prior written permission.
-- Forks must use a different name/branding. References to the original
-(e.g., “fork of Kivro”) are allowed as long as they do not create
-confusion with the official project.
+- You may not use the name Kivro or its logo for a modified project or a commercial product without prior written permission.
+- Forks must use different branding. References to the original project are allowed when they do not create confusion with the official version.
 
-For any inquiries regarding the Kivro trademark: contact@lg-ia-researchlab.fr.
-
-
+For trademark inquiries: `contact@lg-ia-researchlab.fr`
