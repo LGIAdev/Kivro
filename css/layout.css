@@ -8,11 +8,26 @@
 .side-search input{ width:100%; padding:10px 12px; border-radius:10px; background:#0c1018; border:1px solid var(--border); color:var(--text); }
 .side-section{ padding:10px 8px; flex:1; overflow:auto; }
 .side-title{ color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; padding:8px 10px; }
+.conv-row{ position:relative; display:flex; align-items:center; gap:6px; }
 .conv{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:10px; color:var(--text); text-decoration:none; }
 .conv:hover{ background:var(--hover); }
-.conv .ico{ width:18px; height:18px; opacity:.8 }
+.conv-link{ flex:1; min-width:0; }
+.conv-title{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.conv .ico{ width:18px; height:18px; opacity:.8; flex:0 0 auto }
 .conv.selected{ background: var(--sel-bg) !important; color: var(--sel-fg) !important; }
 .conv.selected .ico{ color: currentColor; opacity: 1; }
+.conv-actions-btn{ width:28px; height:28px; margin-right:4px; border:0; border-radius:8px; background:transparent; color:var(--muted); display:grid; place-items:center; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .12s ease, background .12s ease, color .12s ease; }
+.conv-actions-btn svg{ width:16px; height:16px; }
+.conv-row:hover .conv-actions-btn,
+.conv-row.menu-open .conv-actions-btn,
+.conv-actions-btn:focus-visible{ opacity:1; pointer-events:auto; }
+.conv-actions-btn:hover,
+.conv-actions-btn:focus-visible{ background:var(--hover); color:var(--text); outline:none; }
+.conv-menu{ position:absolute; top:calc(100% + 4px); right:0; min-width:140px; padding:6px; border-radius:12px; background:#0c1119; border:1px solid var(--border); box-shadow:0 12px 24px rgba(0,0,0,.35); display:none; z-index:20; }
+.conv-menu.open{ display:block; }
+.conv-menu-btn{ width:100%; padding:9px 10px; border:0; border-radius:8px; background:transparent; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
+.conv-menu-btn:hover{ background:var(--hover); }
+.conv-menu-btn.danger{ color:#f87171; }
 .user-menu{ display:none; padding:6px 8px; border-top:1px solid var(--border) }
 .user-menu.open{ display:block }
 .side-footer{ margin-top:auto; padding:14px; border-top:1px solid var(--border); color:var(--muted); display:flex; align-items:center; gap:.6rem; cursor:pointer }
