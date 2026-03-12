@@ -1,4 +1,4 @@
-﻿const JSON_HEADERS = {
+const JSON_HEADERS = {
   Accept: 'application/json',
   'Content-Type': 'application/json',
 };
@@ -13,14 +13,18 @@ async function request(path, options = {}) {
     config.cache = 'no-store';
   }
 
-  if (config.body && typeof config.body !== 'string') {
+  const isFormData = typeof FormData !== 'undefined' && config.body instanceof FormData;
+  if (config.body && typeof config.body !== 'string' && !isFormData) {
     config.body = JSON.stringify(config.body);
   }
 
-  const needsJson = config.body != null;
-  config.headers = needsJson
-    ? { ...JSON_HEADERS, ...(config.headers || {}) }
-    : { Accept: 'application/json', ...(config.headers || {}) };
+  if (isFormData) {
+    config.headers = { Accept: 'application/json', ...(config.headers || {}) };
+  } else if (config.body != null) {
+    config.headers = { ...JSON_HEADERS, ...(config.headers || {}) };
+  } else {
+    config.headers = { Accept: 'application/json', ...(config.headers || {}) };
+  }
 
   const res = await fetch(url.toString(), config);
   let payload = null;
@@ -64,6 +68,18 @@ export function addConversationMessage(id, payload) {
     method: 'POST',
     body: payload || {},
   });
+}
+
+export async function uploadConversationAttachments(id, files) {
+  const form = new FormData();
+  for (const file of (files || [])) {
+    form.append('files', file, file.name);
+  }
+  const payload = await request(`/api/conversations/${encodeURIComponent(id)}/attachments`, {
+    method: 'POST',
+    body: form,
+  });
+  return Array.isArray(payload?.attachments) ? payload.attachments : [];
 }
 
 export function deleteConversation(id) {

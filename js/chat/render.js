@@ -255,10 +255,74 @@ export function ensureLog(){
   return log;
 }
 
+function formatBytes(bytes){
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} o`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} Ko`;
+  return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)} Mo`;
+}
+
+function attachmentLabel(name){
+  const parts = String(name || '').split('.');
+  return (parts.length > 1 ? parts.at(-1) : 'FILE').slice(0, 4).toUpperCase();
+}
+
+function appendMessageAttachments(container, attachments){
+  if(!Array.isArray(attachments) || attachments.length === 0) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'message-attachments';
+
+  for(const attachment of attachments){
+    const href = attachment.url || attachment.previewUrl || '';
+    const card = document.createElement(href ? 'a' : 'div');
+    card.className = 'attachment-card';
+    if(href){
+      card.href = href;
+      card.target = '_blank';
+      card.rel = 'noreferrer';
+    }
+
+    const preview = document.createElement('div');
+    preview.className = 'attachment-preview';
+    if(attachment.isImage && (attachment.previewUrl || attachment.url)){
+      const img = new Image();
+      img.src = attachment.previewUrl || attachment.url;
+      img.alt = attachment.filename || 'Piece jointe';
+      preview.appendChild(img);
+    }else{
+      const label = document.createElement('span');
+      label.textContent = attachmentLabel(attachment.filename);
+      preview.appendChild(label);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'attachment-meta';
+
+    const name = document.createElement('div');
+    name.className = 'attachment-name';
+    name.textContent = attachment.filename || 'Piece jointe';
+
+    const kind = document.createElement('div');
+    kind.className = 'attachment-kind';
+    kind.textContent = attachment.isImage ? 'Image jointe' : (attachment.mimeType || 'Fichier joint');
+
+    const detail = document.createElement('div');
+    detail.className = 'attachment-detail';
+    detail.textContent = formatBytes(attachment.sizeBytes || 0);
+
+    meta.append(name, kind, detail);
+    card.append(preview, meta);
+    wrap.appendChild(card);
+  }
+
+  container.appendChild(wrap);
+}
+
 /* -----------------------------------------------------------
  * 4) Rendu d'un message (user/assistant)
  * ----------------------------------------------------------- */
-export function renderMsg(role, text){
+export function renderMsg(role, text, options = {}){
   const log = ensureLog();
 
   const row = document.createElement('div');
@@ -271,16 +335,16 @@ export function renderMsg(role, text){
   const b = document.createElement('div');
   b.className = 'bubble';
 
-  // (1) LaTeX -> (2) Markdown (titres, etc.) en préservant les maths
-  const normalized = (/<table[\s>]/i.test(text||"")) ? (text||"") : normalizeLatex(text||"");
-  b.innerHTML = renderMarkdown(normalized);
+  const hasText = !!String(text || '').trim();
+  const normalized = hasText && !/<table[\s>]/i.test(text || '') ? normalizeLatex(text || '') : (text || '');
+  b.innerHTML = hasText ? renderMarkdown(normalized) : '';
+  appendMessageAttachments(b, options.attachments || []);
 
   row.append(r, b);
   log.appendChild(row);
   row.scrollIntoView({ block: 'end' });
 
-  // Rendu KaTeX (cible: la bulle)
-  if (window.kivroRenderMath) {
+  if (window.kivroRenderMath && hasText) {
     const target = b.querySelector('.markdown-body') || b;
     try{ window.kivroRenderMath(target); }catch(e){ console.warn('kivroRenderMath error:', e); }
   }
@@ -294,6 +358,7 @@ export function renderMsg(role, text){
 export function clearChat(){
   const log = qs('#chat-log');
   if (log) log.innerHTML = '';
+  try{ window.kivroClearPendingUploads?.(); }catch(_){ }
   const ta = qs('#composer-input');
   if (ta){ ta.value = ''; ta.focus(); }
 }

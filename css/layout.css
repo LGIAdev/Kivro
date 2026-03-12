@@ -45,9 +45,5 @@
 .icon-btn{ width:34px; height:34px; border-radius:10px; border:1px solid var(--border); background:#0e131c; display:grid; place-items:center; cursor:pointer; color:var(--text); }
 .icon-btn:hover{ background:var(--hover) }
 .icon-btn svg{ width:20px; height:20px }
-.icon-btn.add-visible{ position: relative; border-color:var(--chip-border); box-shadow: inset 0 0 0 1px rgba(110,168,254,.35); }
-.icon-btn.add-visible::before,.icon-btn.add-visible::after{ content:""; position:absolute; left:50%; top:50%; background: currentColor; opacity:.9; transform:translate(-50%,-50%) }
-.icon-btn.add-visible::before{ width:2px; height:14px; border-radius:1px }
-.icon-btn.add-visible::after{ width:14px; height:2px; border-radius:1px }
 .chips{ display:flex; gap:10px; padding:10px 2px 4px 42px; flex-wrap:wrap }
 .chip{ padding:6px 10px; border-radius:999px; background:var(--chip); border:1px solid var(--chip-border); color:var(--muted); font-size:.85rem; cursor:pointer; }

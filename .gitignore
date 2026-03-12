@@ -69,3 +69,6 @@ venv/
 *.tmp
 *.bak
 *.orig
+# Local runtime data
+data/
+

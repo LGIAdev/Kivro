@@ -61,7 +61,6 @@ body{
 :root[data-theme="light"] #prompt-modal #prompt-text{ background:#fff !important; color:#0b1220; border-color:#d9e1ea; }
 :root[data-theme="light"] #prompt-modal #prompt-text::placeholder{ color:#64748b; opacity:1; }
 :root[data-theme="light"] #prompt-modal .icon-btn{ background:#131722; border-color:#26344a; color:#fff; }
-:root[data-theme="light"] #add-modal .modal-card{ background:#fff; color:#0b1220; border-color:#d9e1ea; }
 /* Selection state */
 :root{ --sel-bg: var(--hover); --sel-fg: var(--text); }
 :root[data-theme="dark"]{ --sel-bg:#1c2533; --sel-fg:#e6e9ef; }

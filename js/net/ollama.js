@@ -1,9 +1,16 @@
-// js/net/ollama.js
+﻿// js/net/ollama.js
 // Flux reseau Ollama + rendu des messages (compatible KaTeX)
 
 import { renderMsg } from '../chat/render.js';
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
+import {
+  clearPendingUploads,
+  getPendingUploads,
+  preparePendingUploadsForSend,
+  setPendingUploadsState,
+} from '../features/uploads.js';
+import { uploadConversationAttachments } from './conversationsApi.js';
 
 function normalizeLatex(input) {
   if (!input) return '';
@@ -78,7 +85,7 @@ function toChatHistory(arr) {
     .filter(Boolean);
 }
 
-function buildChatMessages({ sys, convId, userText, maxPast = 16 }) {
+function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] }) {
   const out = [];
   const history = toChatHistory(readHistory(convId));
 
@@ -92,14 +99,12 @@ function buildChatMessages({ sys, convId, userText, maxPast = 16 }) {
 
   const trimmed = hist.slice(-maxPast);
 
-  if (sys && sys.trim()) {
-    out.push({ role: 'system', content: sys.trim() });
-  }
-  for (const m of trimmed) {
-    out.push({ role: m.role, content: m.content });
-  }
-  out.push({ role: 'user', content: userText });
+  if (sys && sys.trim()) out.push({ role: 'system', content: sys.trim() });
+  for (const message of trimmed) out.push({ role: message.role, content: message.content });
 
+  const current = { role: 'user', content: userText };
+  if (images.length) current.images = images;
+  out.push(current);
   return out;
 }
 
@@ -107,27 +112,27 @@ function buildGeneratePrompt({ sys, convId, userText, maxPast = 16 }) {
   const history = toChatHistory(readHistory(convId)).slice(-maxPast);
   const parts = [];
   if (sys && sys.trim()) parts.push(`System:\n${sys.trim()}`);
-  for (const m of history) {
-    parts.push((m.role === 'user' ? 'User' : 'Assistant') + ':\n' + m.content);
+  for (const message of history) {
+    parts.push((message.role === 'user' ? 'User' : 'Assistant') + ':\n' + message.content);
   }
   parts.push('User:\n' + userText);
   parts.push('Assistant:');
   return parts.join('\n\n');
 }
 
-export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 16 }) {
+export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 16, images = [] }) {
   const body = {
     model,
-    messages: buildChatMessages({ sys, convId, userText: prompt, maxPast }),
+    messages: buildChatMessages({ sys, convId, userText: prompt, maxPast, images }),
     stream: true,
   };
-  let res = await fetch(base + '/api/chat', {
+  const res = await fetch(base + '/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
-  if (res.status === 404 || res.status === 400) {
+  if ((res.status === 404 || res.status === 400) && !images.length) {
     return yield* streamGenerate({ base, model, sys, prompt, convId, maxPast });
   }
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -189,12 +194,24 @@ export async function* streamGenerate({ base, model, sys, prompt, convId, maxPas
   }
 }
 
+function renderAssistantChunk(target, text) {
+  target.innerHTML = (
+    (window.kivroRenderMarkdown
+      ? window.kivroRenderMarkdown(
+        window.kivroNormalizeLatex ? window.kivroNormalizeLatex(text) : text,
+      )
+      : (window.kivroNormalizeLatex ? window.kivroNormalizeLatex(text) : text))
+  );
+  if (window.kivroRenderMath) window.kivroRenderMath(target);
+}
+
 export async function sendCurrent() {
   const ta = qs('#composer-input');
   if (!ta) return alert('Zone de saisie introuvable.');
 
   const text = (ta.value || '').trim();
-  if (!text) return;
+  const pendingUploads = getPendingUploads();
+  if (!text && !pendingUploads.length) return;
 
   if (window.kivroEnsureConversationPromise) {
     try { await window.kivroEnsureConversationPromise; } catch (_) {}
@@ -203,52 +220,76 @@ export async function sendCurrent() {
   const base = readBase();
   const model = readModel();
   const sys = readSys();
+  const prepared = await preparePendingUploadsForSend({ model, userText: text });
+  if (!prepared.ok) {
+    alert(prepared.message || 'Les fichiers joints ne peuvent pas etre envoyes.');
+    return;
+  }
 
-  let convId = (Store.currentId && Store.currentId()) || null;
+  let convId = Store.currentId?.() || null;
   if (convId) {
     try { await Store.ensureLoaded(convId); } catch (_) {}
   }
   if (!convId && Store.create) {
-    const c = await Store.create('Nouvelle conversation');
-    convId = c.id;
+    const conversation = await Store.create('Nouvelle conversation');
+    convId = conversation.id;
+  }
+  if (!convId) {
+    alert('Impossible de creer la conversation.');
+    return;
   }
 
-  renderMsg('user', text);
-  if (convId) {
-    try { await Store.addMsg(convId, 'user', text); } catch (_) {}
-    try { await Store.renameIfDefault(convId, fmtTitle(text)); } catch (_) {}
-    try { await mountHistory(); } catch (_) {}
+  let uploadedAttachments = [];
+  if (pendingUploads.length) {
+    setPendingUploadsState('uploading');
+    try {
+      uploadedAttachments = await uploadConversationAttachments(convId, pendingUploads.map((item) => item.file));
+    } catch (err) {
+      const message = err?.message || 'Televersement impossible.';
+      setPendingUploadsState('error', message);
+      alert(message);
+      return;
+    }
   }
+
+  renderMsg('user', text, { attachments: uploadedAttachments });
+  ta.value = '';
+  clearPendingUploads();
+
+  try {
+    await Store.addMsg(convId, 'user', text, {
+      attachmentIds: uploadedAttachments.map((item) => item.id),
+    });
+  } catch (err) {
+    console.warn('Store.addMsg failed', err);
+  }
+
+  try {
+    await Store.renameIfDefault(convId, fmtTitle(prepared.suggestedTitle || text || 'Piece jointe'));
+  } catch (_) {}
+  try {
+    await mountHistory();
+  } catch (_) {}
 
   const aiB = renderMsg('assistant', '');
-  ta.value = '';
-
   let aiText = '';
-  const footer = () => '';
   try {
-    for await (const chunk of streamChat({ base, model, sys, prompt: text, convId })) {
+    for await (const chunk of streamChat({
+      base,
+      model,
+      sys,
+      prompt: prepared.promptText || text,
+      convId,
+      images: prepared.imagePayloads || [],
+    })) {
       aiText += chunk;
-      aiB.innerHTML = (
-        (window.kivroRenderMarkdown
-          ? window.kivroRenderMarkdown(
-            window.kivroNormalizeLatex ? window.kivroNormalizeLatex(aiText) : aiText,
-          )
-          : (window.kivroNormalizeLatex ? window.kivroNormalizeLatex(aiText) : aiText))
-      ) + footer();
-      if (window.kivroRenderMath) window.kivroRenderMath(aiB);
+      renderAssistantChunk(aiB, aiText);
     }
     if (convId) await Store.addMsg(convId, 'assistant', aiText);
     try { await mountHistory(); } catch (_) {}
   } catch (err) {
     const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
-    aiB.innerHTML = (
-      (window.kivroRenderMarkdown
-        ? window.kivroRenderMarkdown(
-          window.kivroNormalizeLatex ? window.kivroNormalizeLatex(msg) : msg,
-        )
-        : (window.kivroNormalizeLatex ? window.kivroNormalizeLatex(msg) : msg))
-    ) + footer();
-    if (window.kivroRenderMath) window.kivroRenderMath(aiB);
+    renderAssistantChunk(aiB, msg);
     if (convId) await Store.addMsg(convId, 'assistant', msg);
     try { await mountHistory(); } catch (_) {}
     console.warn('Fetch error', err);
@@ -256,6 +297,6 @@ export async function sendCurrent() {
 }
 
 document.addEventListener('settings:model-changed', (e) => {
-  const m = (e.detail || '').trim();
-  if (m) setLS(LS.model, m);
+  const model = (e.detail || '').trim();
+  if (model) setLS(LS.model, model);
 });

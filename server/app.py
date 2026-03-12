@@ -1,7 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
+import cgi
 import json
+import mimetypes
 import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +17,22 @@ if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
 import db  # noqa: E402
+
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_PDF_BYTES = 20 * 1024 * 1024
+MAX_TEXT_BYTES = 2 * 1024 * 1024
+MAX_TOTAL_BYTES = 25 * 1024 * 1024
+MAX_FILES = 5
+ALLOWED_UPLOADS = {
+    '.jpg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
+    '.jpeg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
+    '.png': ('image/png', MAX_IMAGE_BYTES, 'image'),
+    '.webp': ('image/webp', MAX_IMAGE_BYTES, 'image'),
+    '.pdf': ('application/pdf', MAX_PDF_BYTES, 'pdf'),
+    '.txt': ('text/plain', MAX_TEXT_BYTES, 'text'),
+    '.md': ('text/markdown', MAX_TEXT_BYTES, 'text'),
+}
 
 
 class KivroHandler(SimpleHTTPRequestHandler):
@@ -85,11 +103,26 @@ class KivroHandler(SimpleHTTPRequestHandler):
                         conversation_id,
                         role=body.get('role', ''),
                         content=body.get('content', ''),
+                        attachment_ids=body.get('attachment_ids') or [],
                     )
                     if message is None:
                         self.send_error_json(HTTPStatus.NOT_FOUND, 'Conversation not found.')
                         return
                     self.send_json(message, status=HTTPStatus.CREATED)
+                    return
+
+                if method == 'POST' and len(parts) == 4 and parts[3] == 'attachments':
+                    uploads = self.read_upload_files()
+                    attachments = [
+                        db.create_attachment(
+                            conversation_id,
+                            filename=item['filename'],
+                            mime_type=item['mime_type'],
+                            payload=item['content'],
+                        )
+                        for item in uploads
+                    ]
+                    self.send_json({'attachments': attachments}, status=HTTPStatus.CREATED)
                     return
 
                 if method == 'PATCH' and len(parts) == 3:
@@ -136,6 +169,64 @@ class KivroHandler(SimpleHTTPRequestHandler):
         if not isinstance(data, dict):
             raise ValueError('JSON body must be an object.')
         return data
+
+    def normalize_upload(self, filename: str, mime_type: str | None, content: bytes) -> dict:
+        suffix = Path(filename or '').suffix.lower()
+        if suffix not in ALLOWED_UPLOADS:
+            raise ValueError('Type de fichier non autorise.')
+        normalized_mime, max_bytes, _kind = ALLOWED_UPLOADS[suffix]
+        detected = (mime_type or '').strip().lower()
+        guessed = (mimetypes.guess_type(filename or '')[0] or '').lower()
+        mime = normalized_mime if detected in {'', 'application/octet-stream'} else detected
+        if guessed and mime not in {normalized_mime, guessed}:
+            raise ValueError('Type MIME incoherent pour ce fichier.')
+        if len(content) > max_bytes:
+            raise ValueError(f'Fichier trop volumineux ({filename}).')
+        return {
+            'filename': filename,
+            'mime_type': normalized_mime,
+            'content': content,
+        }
+
+    def read_upload_files(self) -> list[dict]:
+        ctype = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in ctype:
+            raise ValueError('Multipart form-data attendu.')
+
+        env = {
+            'REQUEST_METHOD': 'POST',
+            'CONTENT_TYPE': ctype,
+            'CONTENT_LENGTH': self.headers.get('Content-Length', '0'),
+        }
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ=env,
+            keep_blank_values=True,
+        )
+        raw_files = form['files'] if 'files' in form else form['file'] if 'file' in form else None
+        if raw_files is None:
+            raise ValueError('Aucun fichier recu.')
+        if not isinstance(raw_files, list):
+            raw_files = [raw_files]
+        if len(raw_files) > MAX_FILES:
+            raise ValueError('Trop de fichiers pour un meme envoi.')
+
+        uploads = []
+        total = 0
+        for item in raw_files:
+            if not getattr(item, 'filename', None):
+                continue
+            content = item.file.read() if item.file else b''
+            normalized = self.normalize_upload(item.filename, getattr(item, 'type', None), content)
+            total += len(normalized['content'])
+            if total > MAX_TOTAL_BYTES:
+                raise ValueError('Le total des fichiers depasse la limite autorisee.')
+            uploads.append(normalized)
+
+        if not uploads:
+            raise ValueError('Aucun fichier recu.')
+        return uploads
 
     def send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')

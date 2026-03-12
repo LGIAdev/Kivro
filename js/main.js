@@ -2,7 +2,6 @@
 
 import { initTheme } from './core/theme.js';
 import { wireUserMenu, wirePromptModal, wireSettingsModal } from './ui/menus.js';
-import { wireAddModal } from './ui/modals.js';
 import { wireSendAction, mountStatusPill } from './ui/actions.js';
 import { wireLogout } from './auth/logout.js';
 import { wireUploads } from './features/uploads.js';
@@ -69,6 +68,7 @@ function clearChatUI() {
   } catch (_) {}
   const log = $(SEL.chatLog);
   if (log) log.innerHTML = '';
+  try { window.kivroClearPendingUploads?.(); } catch (_) {}
 }
 
 function getLatestUserTextFromChatLog() {
@@ -138,6 +138,11 @@ function wireEnsureConversationAtFirstPromptDelegated() {
     let text = ($(SEL.composer)?.value ?? '').trim();
     if (!text) text = getLatestUserTextFromChatLog();
     if (!text) return;
+    if (hasCurrentConversation()) {
+      state.currentConvId = Store.currentId?.() || state.currentConvId;
+      state.awaitingFirstPrompt = false;
+      return;
+    }
 
     const title = makeTitleFromText(text);
     const id = await createConversationWithBestEffort(title);
@@ -182,6 +187,11 @@ function startChatLogObserver() {
     if (!text) return;
     Promise.resolve().then(async () => {
       if (!state.awaitingFirstPrompt) return;
+      if (hasCurrentConversation()) {
+        state.currentConvId = Store.currentId?.() || state.currentConvId;
+        state.awaitingFirstPrompt = false;
+        return;
+      }
       const title = makeTitleFromText(text);
       const id = await createConversationWithBestEffort(title);
       state.currentConvId = id || null;
@@ -199,7 +209,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireUserMenu();
   wirePromptModal();
   wireSettingsModal();
-  wireAddModal();
   wireSendAction();
   mountStatusPill();
   wireLogout();

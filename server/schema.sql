@@ -1,4 +1,4 @@
-﻿PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
@@ -19,6 +19,22 @@ CREATE TABLE IF NOT EXISTS messages (
   UNIQUE (conversation_id, position)
 );
 
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  message_id INTEGER,
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  storage_path TEXT NOT NULL,
+  preview_path TEXT,
+  status TEXT NOT NULL DEFAULT 'stored' CHECK (status IN ('stored', 'ready', 'failed')),
+  created_at INTEGER NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
   ON conversations(updated_at DESC);
 
@@ -27,3 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_position
   ON messages(conversation_id, position);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_conversation_id
+  ON attachments(conversation_id);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_message_id
+  ON attachments(message_id);

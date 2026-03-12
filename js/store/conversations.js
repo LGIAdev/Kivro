@@ -18,6 +18,22 @@ function sortCache() {
   cache.sort((a, b) => (b.updatedAt - a.updatedAt) || (b.createdAt - a.createdAt));
 }
 
+function normalizeAttachment(raw) {
+  if (!raw) return null;
+  return {
+    id: raw.id ?? null,
+    conversationId: raw.conversationId ?? raw.conversation_id ?? null,
+    messageId: raw.messageId ?? raw.message_id ?? null,
+    filename: String(raw.filename ?? 'fichier'),
+    mimeType: String(raw.mimeType ?? raw.mime_type ?? 'application/octet-stream'),
+    sizeBytes: Number(raw.sizeBytes ?? raw.size_bytes ?? 0),
+    url: raw.url ?? null,
+    previewUrl: raw.previewUrl ?? raw.preview_url ?? raw.url ?? null,
+    isImage: Boolean(raw.isImage ?? raw.is_image ?? String(raw.mimeType ?? raw.mime_type ?? '').startsWith('image/')),
+    status: String(raw.status ?? 'stored'),
+  };
+}
+
 function normalizeMessage(raw) {
   if (!raw) return null;
   return {
@@ -27,6 +43,7 @@ function normalizeMessage(raw) {
     content: String(raw.content ?? raw.text ?? ''),
     createdAt: Number(raw.createdAt ?? raw.created_at ?? Date.now()),
     position: Number(raw.position ?? 0),
+    attachments: Array.isArray(raw.attachments) ? raw.attachments.map(normalizeAttachment).filter(Boolean) : [],
   };
 }
 
@@ -143,7 +160,7 @@ async function openConversation(id) {
   const fullConversation = await Store.fetch(id);
   clearChat();
   for (const message of (fullConversation?.messages || [])) {
-    renderMsg(message.role, message.content);
+    renderMsg(message.role, message.content, { attachments: message.attachments || [] });
   }
 }
 
@@ -209,8 +226,12 @@ export const Store = {
     return created;
   },
 
-  async addMsg(id, role, content) {
-    const message = normalizeMessage(await addConversationMessage(id, { role, content }));
+  async addMsg(id, role, content, options = {}) {
+    const message = normalizeMessage(await addConversationMessage(id, {
+      role,
+      content,
+      attachment_ids: options.attachmentIds || [],
+    }));
     let conversation = this.get(id);
     if (!conversation) {
       conversation = await this.fetch(id);
