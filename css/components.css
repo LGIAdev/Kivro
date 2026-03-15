@@ -219,6 +219,12 @@
   border-radius:999px;
 }
 .icon-btn#send-btn:hover{ filter:brightness(1.08); }
+.icon-btn#send-btn.is-busy,
+.icon-btn#send-btn:disabled{
+  opacity:.72;
+  cursor:progress;
+  filter:none;
+}
 
 /* Mode clair — pipeline "barre d'invite" avec .composer-card/.composer-input */
 :root[data-theme="light"] .composer-card{

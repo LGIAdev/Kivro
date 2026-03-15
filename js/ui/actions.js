@@ -42,4 +42,3 @@ if (chipPy) {
     chipPy.classList.toggle('is-active', next);
   });
 }
-

@@ -17,6 +17,7 @@ if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
 import db  # noqa: E402
+import ocr  # noqa: E402
 
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -75,6 +76,18 @@ class KivroHandler(SimpleHTTPRequestHandler):
 
             if method == 'GET' and path == '/api/conversations':
                 self.send_json(db.list_conversations())
+                return
+
+            if method == 'POST' and path == '/api/ocr/pix2text':
+                uploads = self.read_upload_files()
+                images = []
+                for item in uploads:
+                    suffix = Path(item['filename'] or '').suffix.lower()
+                    kind = ALLOWED_UPLOADS.get(suffix, (None, None, None))[2]
+                    if kind != 'image':
+                        raise ValueError('Le moteur OCR Pix2Text accepte uniquement des images.')
+                    images.append(item)
+                self.send_json(ocr.run_pix2text_batch(images))
                 return
 
             parts = [part for part in path.strip('/').split('/') if part]

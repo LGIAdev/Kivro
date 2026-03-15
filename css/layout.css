@@ -35,6 +35,9 @@
 .main{ position:relative; overflow:auto }
 .topbar{ display:flex; align-items:center; gap:.8rem; padding:14px 18px; border-bottom:1px solid var(--border); min-height:48px }
 .center{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:7vh; gap:18px }
+.main.is-conversation .center{ align-items:stretch; padding-top:24px; gap:0; }
+.main.is-conversation .center > .logo,
+.main.is-conversation .center > #model-label{ display:none; }
 .logo{ height:48px; padding:0 16px; border-radius:999px; background:#0c1119; border:1px solid var(--border); display:grid; place-items:center }
 .logo span{ font-weight:700; letter-spacing:.02em }
 .composer-wrap{ display:flex; justify-content:center; padding:26px 18px }

@@ -1,4 +1,4 @@
-import { canModelReadFiles, getFileSupportErrorMessage } from '../config/file-capable-models.js';
+import { canModelReadFiles } from '../config/file-capable-models.js';
 
 const LIMITS = {
   image: 10 * 1024 * 1024,
@@ -174,6 +174,56 @@ function readFileAsBase64(file) {
   });
 }
 
+function appendPromptBlock(promptText, label, blocks) {
+  if (!blocks.length) return promptText;
+  const prefix = promptText ? '\n\n' : '';
+  return `${promptText}${prefix}${label}\n\n${blocks.join('\n\n---\n\n')}`;
+}
+
+function textFragmentsToPromptBlocks(textFragments) {
+  return textFragments.map((item) => ['Fichier: ' + item.name, item.content].join('\n'));
+}
+
+function ocrResultsToPromptBlocks(results) {
+  return results.map((item) => ['Image: ' + item.filename, item.markdown].join('\n'));
+}
+
+function defaultPromptForAttachments({ mode, userText }) {
+  const trimmed = String(userText || '').trim();
+  if (trimmed) return trimmed;
+  if (mode === 'ocr') return 'Analyse la transcription OCR ci-dessous et aide-moi a resoudre le probleme.';
+  if (mode === 'image') return 'Analyse le fichier joint et aide-moi a resoudre le probleme.';
+  return 'Analyse le document joint.';
+}
+
+async function requestPix2TextOcr(imageItems) {
+  const form = new FormData();
+  for (const item of imageItems) {
+    form.append('files', item.file, item.file.name);
+  }
+
+  const res = await fetch('/api/ocr/pix2text', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: form,
+  });
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch (_) {}
+
+  if (!res.ok) {
+    throw new Error(payload?.error || `HTTP ${res.status}`);
+  }
+
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  return results.map((item) => ({
+    filename: String(item?.filename || '').trim(),
+    markdown: String(item?.markdown || '').trim(),
+  }));
+}
+
 export function wireUploads() {
   state.addBtn = document.getElementById('add-btn');
   state.fileInput = document.getElementById('file-input');
@@ -212,6 +262,26 @@ export function getPendingUploads() {
   return state.items.slice();
 }
 
+export function detachPendingUploads() {
+  const items = state.items.slice();
+  state.items = [];
+  setError('');
+  renderPendingUploads();
+  return items;
+}
+
+export function restorePendingUploads(items, error = '') {
+  state.items = Array.isArray(items) ? items.slice() : [];
+  setError(error);
+  renderPendingUploads();
+}
+
+export function releaseUploadItems(items) {
+  for (const item of (items || [])) {
+    if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  }
+}
+
 export function clearPendingUploads() {
   for (const item of state.items) {
     if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
@@ -231,8 +301,8 @@ export function setPendingUploadsState(status, error = '') {
   renderPendingUploads();
 }
 
-export async function preparePendingUploadsForSend({ model, userText }) {
-  const items = getPendingUploads();
+export async function preparePendingUploadsForSend({ model, userText, onStatus, items: providedItems }) {
+  const items = Array.isArray(providedItems) ? providedItems.slice() : getPendingUploads();
   if (!items.length) {
     return {
       ok: true,
@@ -250,13 +320,6 @@ export async function preparePendingUploadsForSend({ model, userText }) {
     };
   }
 
-  if (!canModelReadFiles(model)) {
-    return {
-      ok: false,
-      message: getFileSupportErrorMessage(),
-    };
-  }
-
   const imageItems = items.filter((item) => item.kind === 'image');
   const textItems = items.filter((item) => item.kind === 'text');
   const textFragments = [];
@@ -267,19 +330,57 @@ export async function preparePendingUploadsForSend({ model, userText }) {
   }
 
   const imagePayloads = [];
-  for (const item of imageItems) {
-    imagePayloads.push(await readFileAsBase64(item.file));
+  let promptText = String(userText || '').trim();
+
+  if (canModelReadFiles(model)) {
+    for (const item of imageItems) {
+      imagePayloads.push(await readFileAsBase64(item.file));
+    }
+    if (!promptText && (imagePayloads.length || textFragments.length)) {
+      promptText = defaultPromptForAttachments({
+        mode: imagePayloads.length ? 'image' : 'text',
+        userText,
+      });
+    }
+  } else if (imageItems.length) {
+    if (typeof onStatus === 'function') onStatus('ocr-reading');
+    let ocrResults = [];
+    try {
+      ocrResults = await requestPix2TextOcr(imageItems);
+    } catch (err) {
+      return {
+        ok: false,
+        message: err?.message || 'OCR impossible pour les images jointes.',
+      };
+    }
+
+    const validOcrResults = ocrResults.filter((item) => item.filename && item.markdown);
+    if (validOcrResults.length !== imageItems.length) {
+      return {
+        ok: false,
+        message: 'Impossible de lire correctement l image. Essayez une image plus nette ou utilisez un modele multimodal.',
+      };
+    }
+
+    if (!promptText) {
+      promptText = defaultPromptForAttachments({ mode: 'ocr', userText });
+    }
+    promptText = appendPromptBlock(
+      promptText,
+      'Transcription OCR des images jointes:',
+      ocrResultsToPromptBlocks(validOcrResults),
+    );
+    if (typeof onStatus === 'function') onStatus('ocr-complete');
+  } else if (!promptText && textFragments.length) {
+    promptText = defaultPromptForAttachments({ mode: 'text', userText });
   }
 
-  let promptText = String(userText || '').trim();
-  if (!promptText) {
-    promptText = imagePayloads.length
-      ? 'Analyse le fichier joint et aide-moi a resoudre le probleme.'
-      : 'Analyse le document joint.';
-  }
   if (textFragments.length) {
-    const blocks = textFragments.map((item) => ['Fichier: ' + item.name, item.content].join('\n'));
-    promptText += '\n\nContenu des fichiers joints:\n\n' + blocks.join('\n\n---\n\n');
+    promptText = appendPromptBlock(
+      promptText,
+      'Contenu des fichiers joints:',
+      textFragmentsToPromptBlocks(textFragments),
+    );
   }
 
   return {

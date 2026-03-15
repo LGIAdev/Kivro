@@ -11,5 +11,5 @@ export function canModelReadFiles(model) {
 }
 
 export function getFileSupportErrorMessage() {
-  return 'Le modele selectionne ne sait pas lire les fichiers joints.';
+  return 'Le modele selectionne ne lit pas directement les fichiers joints.';
 }

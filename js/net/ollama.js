@@ -4,11 +4,13 @@
 import { renderMsg } from '../chat/render.js';
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
+import { canModelReadFiles } from '../config/file-capable-models.js';
 import {
-  clearPendingUploads,
+  detachPendingUploads,
   getPendingUploads,
   preparePendingUploadsForSend,
-  setPendingUploadsState,
+  releaseUploadItems,
+  restorePendingUploads,
 } from '../features/uploads.js';
 import { uploadConversationAttachments } from './conversationsApi.js';
 
@@ -33,6 +35,8 @@ function normalizeLatex(input) {
 }
 
 const LS = { base: 'ollamaBase', model: 'ollamaModel', sys: 'systemPrompt' };
+const OCR_PROGRESS_HINT_DELAY_MS = 8000;
+let isSendInFlight = false;
 const getRaw = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
@@ -205,94 +209,191 @@ function renderAssistantChunk(target, text) {
   if (window.kivroRenderMath) window.kivroRenderMath(target);
 }
 
+function hasPendingImageUploads(items = []) {
+  return items.some((item) => item?.kind === 'image');
+}
+
+function statusMessageFor(stage) {
+  if (stage === 'ocr-complete') return 'Transcription terminee, envoi au modele...';
+  if (stage === 'ocr-reading-slow') {
+    return 'Lecture de l image en cours...\n\nLe premier traitement OCR peut etre plus long.';
+  }
+  return 'Lecture de l image en cours...';
+}
+
+function setSendButtonBusy(isBusy) {
+  const btn = qs('#send-btn');
+  if (!(btn instanceof HTMLButtonElement)) return;
+  btn.disabled = isBusy;
+  btn.classList.toggle('is-busy', isBusy);
+  btn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+  btn.title = isBusy ? 'Traitement en cours...' : '';
+}
+
 export async function sendCurrent() {
   const ta = qs('#composer-input');
   if (!ta) return alert('Zone de saisie introuvable.');
+  if (isSendInFlight) return;
 
   const text = (ta.value || '').trim();
   const pendingUploads = getPendingUploads();
   if (!text && !pendingUploads.length) return;
-
-  if (window.kivroEnsureConversationPromise) {
-    try { await window.kivroEnsureConversationPromise; } catch (_) {}
-  }
-
-  const base = readBase();
   const model = readModel();
-  const sys = readSys();
-  const prepared = await preparePendingUploadsForSend({ model, userText: text });
-  if (!prepared.ok) {
-    alert(prepared.message || 'Les fichiers joints ne peuvent pas etre envoyes.');
-    return;
+  const needsOcrFeedback = hasPendingImageUploads(pendingUploads) && !canModelReadFiles(model);
+
+  if (needsOcrFeedback) {
+    document.dispatchEvent(new CustomEvent('chat:view-mode', {
+      detail: { mode: 'conversation' },
+    }));
   }
 
-  let convId = Store.currentId?.() || null;
-  if (convId) {
-    try { await Store.ensureLoaded(convId); } catch (_) {}
-  }
-  if (!convId && Store.create) {
-    const conversation = await Store.create('Nouvelle conversation');
-    convId = conversation.id;
-  }
-  if (!convId) {
-    alert('Impossible de creer la conversation.');
-    return;
-  }
+  const detachedUploads = pendingUploads.length ? detachPendingUploads() : [];
+  const localAttachments = detachedUploads.map((item) => ({
+    filename: item?.file?.name || 'Piece jointe',
+    mimeType: item?.file?.type || '',
+    sizeBytes: Number(item?.file?.size || 0),
+    previewUrl: item?.objectUrl || null,
+    url: item?.objectUrl || null,
+    isImage: item?.kind === 'image',
+  }));
+  let shouldReleaseDetachedUploads = true;
+  let ocrHintTimer = null;
 
-  let uploadedAttachments = [];
-  if (pendingUploads.length) {
-    setPendingUploadsState('uploading');
-    try {
-      uploadedAttachments = await uploadConversationAttachments(convId, pendingUploads.map((item) => item.file));
-    } catch (err) {
-      const message = err?.message || 'Televersement impossible.';
-      setPendingUploadsState('error', message);
+  isSendInFlight = true;
+  setSendButtonBusy(true);
+
+  try {
+    renderMsg('user', text, { attachments: localAttachments });
+    ta.value = '';
+
+    if (window.kivroEnsureConversationPromise) {
+      try { await window.kivroEnsureConversationPromise; } catch (_) {}
+    }
+
+    const base = readBase();
+    const sys = readSys();
+    let aiB = null;
+    let ocrStage = 'ocr-reading';
+    let hasRenderedModelText = false;
+
+    const updateOcrStatus = (stage) => {
+      ocrStage = stage;
+      if (!aiB || hasRenderedModelText) return;
+      renderAssistantChunk(aiB, statusMessageFor(stage));
+    };
+
+    if (needsOcrFeedback) {
+      ocrHintTimer = setTimeout(() => {
+        if (ocrStage === 'ocr-reading') updateOcrStatus('ocr-reading-slow');
+      }, OCR_PROGRESS_HINT_DELAY_MS);
+    }
+
+    let convId = Store.currentId?.() || null;
+    if (convId) {
+      try {
+        const existingConversation = await Store.ensureLoaded(convId);
+        if (!existingConversation?.id) throw new Error('Conversation not found');
+      } catch (_) {
+        try { Store.clearCurrent?.(); } catch (_) {}
+        convId = null;
+      }
+    }
+    if (!convId && Store.create) {
+      const conversation = await Store.create('Nouvelle conversation');
+      convId = conversation.id;
+    }
+    if (!convId) {
+      const message = 'Impossible de creer la conversation.';
+      if (detachedUploads.length) {
+        restorePendingUploads(detachedUploads, message);
+        shouldReleaseDetachedUploads = false;
+      }
       alert(message);
       return;
     }
-  }
 
-  renderMsg('user', text, { attachments: uploadedAttachments });
-  ta.value = '';
-  clearPendingUploads();
-
-  try {
-    await Store.addMsg(convId, 'user', text, {
-      attachmentIds: uploadedAttachments.map((item) => item.id),
-    });
-  } catch (err) {
-    console.warn('Store.addMsg failed', err);
-  }
-
-  try {
-    await Store.renameIfDefault(convId, fmtTitle(prepared.suggestedTitle || text || 'Piece jointe'));
-  } catch (_) {}
-  try {
-    await mountHistory();
-  } catch (_) {}
-
-  const aiB = renderMsg('assistant', '');
-  let aiText = '';
-  try {
-    for await (const chunk of streamChat({
-      base,
-      model,
-      sys,
-      prompt: prepared.promptText || text,
-      convId,
-      images: prepared.imagePayloads || [],
-    })) {
-      aiText += chunk;
-      renderAssistantChunk(aiB, aiText);
+    if (needsOcrFeedback) {
+      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'));
     }
-    if (convId) await Store.addMsg(convId, 'assistant', aiText);
-    try { await mountHistory(); } catch (_) {}
-  } catch (err) {
-    const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
-    renderAssistantChunk(aiB, msg);
-    if (convId) await Store.addMsg(convId, 'assistant', msg);
-    try { await mountHistory(); } catch (_) {}
-    console.warn('Fetch error', err);
+
+    let uploadedAttachments = [];
+    if (detachedUploads.length) {
+      try {
+        uploadedAttachments = await uploadConversationAttachments(convId, detachedUploads.map((item) => item.file));
+      } catch (err) {
+        const message = err?.message || 'Televersement impossible.';
+        restorePendingUploads(detachedUploads, message);
+        shouldReleaseDetachedUploads = false;
+        if (aiB) {
+          renderAssistantChunk(aiB, message);
+        } else {
+          alert(message);
+        }
+        return;
+      }
+    }
+
+    try {
+      await Store.addMsg(convId, 'user', text, {
+        attachmentIds: uploadedAttachments.map((item) => item.id),
+      });
+    } catch (_) {
+    }
+
+    const prepared = await preparePendingUploadsForSend({
+      model,
+      userText: text,
+      onStatus: needsOcrFeedback ? updateOcrStatus : undefined,
+      items: detachedUploads,
+    });
+    if (ocrHintTimer) clearTimeout(ocrHintTimer);
+    if (!prepared.ok) {
+      const message = prepared.message || 'Les fichiers joints ne peuvent pas etre envoyes.';
+      if (aiB) {
+        renderAssistantChunk(aiB, message);
+      } else {
+        alert(message);
+      }
+      return;
+    }
+
+    try {
+      await Store.renameIfDefault(convId, fmtTitle(prepared.suggestedTitle || text || 'Piece jointe'));
+    } catch (_) {}
+    try {
+      await mountHistory();
+    } catch (_) {}
+
+    if (!aiB) aiB = renderMsg('assistant', '');
+    let aiText = '';
+    try {
+      for await (const chunk of streamChat({
+        base,
+        model,
+        sys,
+        prompt: prepared.promptText || text,
+        convId,
+        images: prepared.imagePayloads || [],
+      })) {
+        aiText += chunk;
+        if (!aiText.trim()) continue;
+        hasRenderedModelText = true;
+        renderAssistantChunk(aiB, aiText);
+      }
+      if (convId) await Store.addMsg(convId, 'assistant', aiText);
+      try { await mountHistory(); } catch (_) {}
+    } catch (err) {
+      const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
+      renderAssistantChunk(aiB, msg);
+      if (convId) await Store.addMsg(convId, 'assistant', msg);
+      try { await mountHistory(); } catch (_) {}
+      console.warn('Fetch error', err);
+    }
+  } finally {
+    if (ocrHintTimer) clearTimeout(ocrHintTimer);
+    if (shouldReleaseDetachedUploads) releaseUploadItems(detachedUploads);
+    isSendInFlight = false;
+    setSendButtonBusy(false);
   }
 }
 

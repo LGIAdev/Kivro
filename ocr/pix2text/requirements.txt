@@ -1,0 +1,4 @@
+pix2text
+onnxruntime
+pillow
+numpy
