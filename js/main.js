@@ -30,23 +30,6 @@ const state = {
 
 function $(sel) { return document.querySelector(sel); }
 
-function setMainViewMode(mode = 'empty') {
-  const main = document.querySelector('.main');
-  if (!main) return;
-  const isConversation = mode === 'conversation';
-  main.classList.toggle('is-conversation', isConversation);
-  main.dataset.viewMode = isConversation ? 'conversation' : 'empty';
-}
-
-function hasRenderedMessages() {
-  const log = $(SEL.chatLog);
-  return !!log?.querySelector('.msg');
-}
-
-function syncMainViewMode() {
-  setMainViewMode(hasRenderedMessages() ? 'conversation' : 'empty');
-}
-
 function hasCurrentConversation() {
   try {
     return !!Store?.currentId?.();
@@ -142,7 +125,6 @@ function wireNewChatButton() {
     try { if (typeof Store?.clearCurrent === 'function') Store.clearCurrent(); } catch (_) {}
     state.currentConvId = null;
     state.awaitingFirstPrompt = true;
-    setMainViewMode('empty');
 
     const input = $(SEL.composer);
     if (input) { input.value = ''; input.focus(); }
@@ -196,11 +178,10 @@ function wireEnsureConversationAtFirstPromptDelegated() {
 }
 
 function startChatLogObserver() {
-  const center = document.querySelector('.center');
-  if (!center || state.chatObserver) return;
+  const log = $(SEL.chatLog);
+  if (!log || state.chatObserver) return;
 
   const obs = new MutationObserver(() => {
-    syncMainViewMode();
     if (!state.awaitingFirstPrompt) return;
     const text = getLatestUserTextFromChatLog();
     if (!text) return;
@@ -218,14 +199,9 @@ function startChatLogObserver() {
     });
   });
 
-  obs.observe(center, { childList: true, subtree: true });
+  obs.observe(log, { childList: true, subtree: true });
   state.chatObserver = obs;
 }
-
-document.addEventListener('chat:view-mode', (event) => {
-  const mode = event?.detail?.mode === 'conversation' ? 'conversation' : 'empty';
-  setMainViewMode(mode);
-});
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
@@ -268,5 +244,4 @@ print("2**10 =", x)
     try { await Store.ensureLoaded(currentId); } catch (_) {}
   }
   state.awaitingFirstPrompt = !hasCurrentConversation();
-  syncMainViewMode();
 });

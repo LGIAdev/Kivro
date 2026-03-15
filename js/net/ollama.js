@@ -241,12 +241,6 @@ export async function sendCurrent() {
   const model = readModel();
   const needsOcrFeedback = hasPendingImageUploads(pendingUploads) && !canModelReadFiles(model);
 
-  if (needsOcrFeedback) {
-    document.dispatchEvent(new CustomEvent('chat:view-mode', {
-      detail: { mode: 'conversation' },
-    }));
-  }
-
   const detachedUploads = pendingUploads.length ? detachPendingUploads() : [];
   const localAttachments = detachedUploads.map((item) => ({
     filename: item?.file?.name || 'Piece jointe',
