@@ -22,6 +22,8 @@ Status: project under active development.
 - Persistent local storage of conversations in SQLite
 - Rename and delete actions for conversation links
 - Local Python backend serving both the UI and the API
+- Direct file reading for supported multimodal models
+- Local Pix2Text OCR for image uploads sent to non-multimodal models
 
 ---
 
@@ -32,12 +34,16 @@ Kivro now runs as a local application made of:
 - a local Python server
 - a local SQLite database
 - a browser UI served from the same local server
+- local Ollama models running outside Kivro
+- a local Pix2Text OCR integration inside Kivro for non-multimodal models
 
 Conversation data is stored locally in:
 
 `data/kivro.db`
 
 No cloud database is used for conversation history.
+
+OCR runtime files, downloaded model weights, temporary files and OCR outputs are kept local and are excluded from the Git repository.
 
 ---
 
@@ -70,6 +76,8 @@ Make sure Ollama is installed locally and running, for example on:
 
 `http://127.0.0.1:11434`
 
+For non-multimodal models, Kivro can route image uploads through the local Pix2Text OCR flow before sending the extracted text to the model.
+
 ---
 
 ## Conversation history
@@ -94,6 +102,7 @@ Logging out of the interface no longer clears persistent conversation history.
 - `js/`: frontend logic
 - `server/`: local API and SQLite access
 - `css/`: styles
+- `ocr/pix2text/`: local OCR integration scripts and stable config
 - `data/kivro.db`: local conversation database
 
 ---
@@ -105,7 +114,7 @@ Logging out of the interface no longer clears persistent conversation history.
 - [x] Local conversation history
 - [x] SQLite persistence
 - [x] Sidebar rename/delete actions
-- [ ] OCR
+- [x] OCR for image uploads with non-multimodal models
 - [ ] Voice input/output
 - [ ] GitHub Pages demo
 
