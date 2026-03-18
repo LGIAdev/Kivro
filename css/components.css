@@ -35,7 +35,7 @@
   align-self: flex-start; /* toujours calé à gauche */
 }
 .msg .bubble{
-  background:var(--panel);
+  background:var(--surface-soft);
   border:1px solid var(--border);
   padding:12px 14px;
   border-radius:12px;
@@ -125,7 +125,7 @@
 
 /* ===================== 6) Barre d’invite (composer) =============== */
 .composer-card{
-  background:#0e1624;
+  background:var(--surface-field);
   border:1px solid var(--border);
   border-radius:16px;
   padding:16px;
@@ -151,7 +151,7 @@
 /* Zone de saisie (textarea) — autosize + alignement */
 .composer-input{
   width:100%;
-  background:#0c131f;
+  background:var(--surface-card);
   color:var(--text);
   border:1px solid var(--border);
   border-radius:12px;
@@ -185,7 +185,7 @@
 }
 .toolbar{ display:flex; align-items:center; gap:8px; margin-top:8px; }
 .pill{
-  background:#0c131f;
+  background:var(--surface-soft);
   border:1px solid var(--border);
   color:var(--subtle);
   padding:6px 10px;
@@ -200,7 +200,7 @@
   width:36px; height:36px;
   border-radius:10px;
   border:1px solid var(--border);
-  background:#0c131f;
+  background:var(--surface-card);
   color:var(--text);
   cursor:pointer;
 }
@@ -241,6 +241,24 @@
 
 :root[data-theme="light"] .composer-input::placeholder{
   color:rgba(255,255,255,.75);  /* placeholder lisible */
+}
+
+/* Mode clair - surfaces discretes */
+:root[data-theme="light"] .composer-card{
+  background:var(--surface-field);
+  border-color:var(--border);
+  box-shadow:0 12px 30px rgba(15,23,42,.08);
+}
+
+:root[data-theme="light"] .composer-input{
+  background:var(--surface-card);
+  color:var(--text);
+  border-color:var(--border);
+  caret-color:var(--text);
+}
+
+:root[data-theme="light"] .composer-input::placeholder{
+  color:#64748b;
 }
 
 :root[data-theme="dark"] #model-select{ color-scheme: dark; }

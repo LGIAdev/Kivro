@@ -15,6 +15,17 @@
 <body>
   <div class="app">
     <aside class="sidebar">
+      <button
+        class="sidebar-toggle sidebar-toggle-close"
+        id="sidebar-toggle-close"
+        type="button"
+        aria-label="Fermer la barre laterale"
+        aria-expanded="true"
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <div class="side-head">
         <div class="brand-left" aria-label="Kivro">
           <!-- Monogramme cercle K -->
@@ -66,8 +77,26 @@
         <div>User</div>
       </div>
     </aside>
+    <div
+      class="sidebar-resizer"
+      id="sidebar-resizer"
+      role="separator"
+      aria-label="Redimensionner la barre laterale"
+      aria-orientation="vertical"
+    ></div>
 
     <main class="main">
+    <button
+      class="sidebar-toggle sidebar-toggle-open"
+      id="sidebar-toggle-open"
+      type="button"
+      aria-label="Ouvrir la barre laterale"
+      aria-expanded="false"
+    >
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
     <!-- Topbar avec sélecteur de modèles -->
     <header class="topbar" role="navigation" aria-label="Barre supérieure" style="justify-content:flex-end;">
       <div class="right-tools">
@@ -101,12 +130,6 @@
           <path d="M12 1a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V4a3 3 0 0 1 3-3z"/>
           <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
           <path d="M12 19v4"/>
-        </svg>
-      </button>
-      <button class="icon-btn" id="audio-btn" title="Casque (a venir)" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 12a9 9 0 0 1 18 0v6a2 2 0 0 1-2 2h-2v-7h4"/>
-          <path d="M7 13H3v7h2a2 2 0 0 0 2-2v-5z"/>
         </svg>
       </button>
       <button class="icon-btn" id="send-btn" title="Envoyer (Ctrl+Entree)" type="button">

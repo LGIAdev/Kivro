@@ -28,6 +28,9 @@ const state = {
   chatObserver: null,
 };
 
+const SIDEBAR_RESIZE_MAX_CM = 5;
+const CSS_CM_TO_PX = 96 / 2.54;
+
 function $(sel) { return document.querySelector(sel); }
 
 function hasCurrentConversation() {
@@ -203,6 +206,129 @@ function startChatLogObserver() {
   state.chatObserver = obs;
 }
 
+function wireSidebarResize() {
+  const app = document.querySelector('.app');
+  const sidebar = document.querySelector('.sidebar');
+  const handle = document.getElementById('sidebar-resizer');
+  const closeBtn = document.getElementById('sidebar-toggle-close');
+  const openBtn = document.getElementById('sidebar-toggle-open');
+  if (!app || !sidebar || !handle || !closeBtn || !openBtn) return;
+
+  const root = document.documentElement;
+  const baseWidth = Math.round(sidebar.getBoundingClientRect().width);
+  const minWidth = baseWidth;
+  const maxWidth = Math.round(baseWidth + (SIDEBAR_RESIZE_MAX_CM * CSS_CM_TO_PX));
+  const MIN_MAIN_WIDTH = 360;
+
+  let drag = null;
+  let lastOpenWidth = minWidth;
+
+  function syncToggleState(isOpen) {
+    closeBtn.setAttribute('aria-expanded', String(isOpen));
+    openBtn.setAttribute('aria-expanded', String(isOpen));
+  }
+
+  function applyWidth(width) {
+    root.style.setProperty('--sidebar-width', `${width}px`);
+    root.style.setProperty('--sidebar-width-min', `${minWidth}px`);
+    root.style.setProperty('--sidebar-width-max', `${maxWidth}px`);
+    handle.setAttribute('aria-valuemin', String(minWidth));
+    handle.setAttribute('aria-valuemax', String(maxWidth));
+    handle.setAttribute('aria-valuenow', String(Math.round(width)));
+  }
+
+  function effectiveMaxWidth() {
+    const viewportBound = Math.max(minWidth, app.clientWidth - MIN_MAIN_WIDTH);
+    return Math.max(minWidth, Math.min(maxWidth, viewportBound));
+  }
+
+  function clampWidth(width) {
+    return Math.min(effectiveMaxWidth(), Math.max(minWidth, width));
+  }
+
+  function stopDrag(pointerId = null) {
+    if (!drag) return;
+    if (pointerId !== null && drag.pointerId !== pointerId) return;
+
+    drag = null;
+    document.body.classList.remove('sidebar-resize-active');
+    handle.classList.remove('is-active');
+
+    if (typeof handle.releasePointerCapture === 'function' && pointerId !== null && handle.hasPointerCapture(pointerId)) {
+      handle.releasePointerCapture(pointerId);
+    }
+  }
+
+  applyWidth(minWidth);
+  syncToggleState(true);
+
+  function closeSidebar() {
+    if (app.classList.contains('sidebar-collapsed')) return;
+    stopDrag();
+    const currentWidth = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-width')) || minWidth;
+    lastOpenWidth = clampWidth(currentWidth);
+    applyWidth(lastOpenWidth);
+    app.classList.add('sidebar-collapsed');
+    syncToggleState(false);
+  }
+
+  function openSidebar() {
+    if (!app.classList.contains('sidebar-collapsed')) return;
+    app.classList.remove('sidebar-collapsed');
+    applyWidth(clampWidth(lastOpenWidth));
+    syncToggleState(true);
+  }
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (app.classList.contains('sidebar-collapsed')) return;
+    if (event.button !== 0) return;
+    drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: sidebar.getBoundingClientRect().width,
+    };
+    document.body.classList.add('sidebar-resize-active');
+    handle.classList.add('is-active');
+    if (typeof handle.setPointerCapture === 'function') {
+      handle.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+  });
+
+  handle.addEventListener('pointermove', (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextWidth = clampWidth(drag.startWidth + (event.clientX - drag.startX));
+    lastOpenWidth = nextWidth;
+    applyWidth(nextWidth);
+    event.preventDefault();
+  });
+
+  handle.addEventListener('pointerup', (event) => {
+    stopDrag(event.pointerId);
+  });
+
+  handle.addEventListener('pointercancel', (event) => {
+    stopDrag(event.pointerId);
+  });
+
+  window.addEventListener('resize', () => {
+    const currentWidth = app.classList.contains('sidebar-collapsed')
+      ? lastOpenWidth
+      : (parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-width')) || minWidth);
+    const nextWidth = clampWidth(currentWidth);
+    lastOpenWidth = nextWidth;
+    applyWidth(nextWidth);
+  });
+
+  closeBtn.addEventListener('click', () => {
+    closeSidebar();
+  });
+
+  openBtn.addEventListener('click', () => {
+    openSidebar();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
@@ -214,6 +340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireLogout();
   wireUploads();
   wirePyodide();
+  wireSidebarResize();
 
   const chipPy = document.getElementById('chip-py');
   if (chipPy) {
