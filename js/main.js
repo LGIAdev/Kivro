@@ -230,8 +230,6 @@ function wireSidebarResize() {
 
   function applyWidth(width) {
     root.style.setProperty('--sidebar-width', `${width}px`);
-    root.style.setProperty('--sidebar-width-min', `${minWidth}px`);
-    root.style.setProperty('--sidebar-width-max', `${maxWidth}px`);
     handle.setAttribute('aria-valuemin', String(minWidth));
     handle.setAttribute('aria-valuemax', String(maxWidth));
     handle.setAttribute('aria-valuenow', String(Math.round(width)));

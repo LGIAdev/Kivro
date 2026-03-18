@@ -28,23 +28,11 @@ body{
 :root[data-theme="light"] .logo span{ color:var(--text); }
 
 /* Composer corrigé */
-:root[data-theme="light"] .composer-card{
-  background:var(--surface-field);
-  border-color:var(--border);
-  box-shadow:0 12px 30px rgba(15,23,42,.08);
-}
 
 /* Titre "Entrez votre question" */
 :root[data-theme="light"] .composer-header > div:first-child{ color:var(--muted); opacity:.9; }
 
 /* Zone de saisie */
-:root[data-theme="light"] .composer-input{
-  background:var(--surface-card);
-  color:var(--text);
-  border-color:var(--border);
-  caret-color:var(--text);
-}
-:root[data-theme="light"] .composer-input::placeholder{ color:#64748b; }
 
 /* Icônes micro / casque / envoyer */
 :root[data-theme="light"] .composer-card .icon-btn{

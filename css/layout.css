@@ -1,7 +1,5 @@
 :root{
   --sidebar-width:280px;
-  --sidebar-width-min:280px;
-  --sidebar-width-max:469px;
   --sidebar-resizer-hit:12px;
 }
 .app{position:relative; display:grid; grid-template-columns:var(--sidebar-width) minmax(0, 1fr); height:100vh; overflow:hidden}
