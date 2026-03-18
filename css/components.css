@@ -411,6 +411,9 @@
   border-radius:14px;
   background:#0c131f;
 }
+:root[data-theme="light"] .pending-attachment{
+  background:var(--surface-card);
+}
 .pending-attachment.is-error{
   border-color:rgba(248,113,113,.6);
 }
@@ -478,6 +481,9 @@
   background:rgba(12,19,31,.9);
   color:inherit;
   text-decoration:none;
+}
+:root[data-theme="light"] .attachment-card{
+  background:var(--surface-card);
 }
 .attachment-card:hover{
   background:rgba(17,24,39,.95);
