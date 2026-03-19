@@ -18,7 +18,7 @@ function ensureOverlay() {
     + '<div class="login-splash" role="document">'
     + '  <div class="login-card">'
     + '    <div class="login-brand">Kivro</div>'
-    + '    <div class="login-title">Connectez-vous a Kivro</div>'
+    + '    <div class="login-title">Connectez-vous à Kivro</div>'
     + '    <a href="#" id="login-btn" class="login-btn" role="button" aria-label="Connexion">Connexion</a>'
     + '  </div>'
     + '</div>';

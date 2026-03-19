@@ -76,6 +76,10 @@ body{
   border-color:#c7d4e3;
 }
 :root[data-theme="light"] #prompt-modal .settings-card{ background:#fff; color:var(--text); border-color:var(--border); }
+:root[data-theme="dark"] #settings-modal .settings-tab.active{
+  background:transparent;
+  color:var(--text);
+}
 :root[data-theme="light"] #prompt-modal .settings-head{ border-bottom:1px solid var(--border); }
 :root[data-theme="light"] #prompt-modal .settings-tab{ background:#eef2f7; border-color:#d8e0ea; color:#0b1220; }
 :root[data-theme="light"] #prompt-modal #prompt-text{ background:#fff !important; color:#0b1220; border-color:#d9e1ea; }
