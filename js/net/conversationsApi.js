@@ -44,6 +44,17 @@ export function listConversations() {
   return request('/api/conversations');
 }
 
+export function getSystemPrompt() {
+  return request('/api/system-prompt');
+}
+
+export function saveSystemPrompt(prompt) {
+  return request('/api/system-prompt', {
+    method: 'POST',
+    body: { prompt: prompt == null ? '' : String(prompt) },
+  });
+}
+
 export function getConversation(id) {
   return request(`/api/conversations/${encodeURIComponent(id)}`);
 }

@@ -49,3 +49,9 @@ CREATE INDEX IF NOT EXISTS idx_attachments_conversation_id
 
 CREATE INDEX IF NOT EXISTS idx_attachments_message_id
   ON attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS system_prompt (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  prompt TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);

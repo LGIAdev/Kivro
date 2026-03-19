@@ -74,8 +74,17 @@ class KivroHandler(SimpleHTTPRequestHandler):
                 self.send_json({'ok': True, 'db': 'ready'})
                 return
 
+            if method == 'GET' and path == '/api/system-prompt':
+                self.send_json(db.get_system_prompt())
+                return
+
             if method == 'GET' and path == '/api/conversations':
                 self.send_json(db.list_conversations())
+                return
+
+            if method == 'POST' and path == '/api/system-prompt':
+                body = self.read_json_body()
+                self.send_json(db.update_system_prompt(body.get('prompt')))
                 return
 
             if method == 'POST' and path == '/api/ocr/pix2text':

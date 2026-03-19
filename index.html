@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="fr" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kivro — v1_mod</title>
+  <title>Kivro 2026.3.19</title>
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -48,7 +48,7 @@
         <div id="history"></div>
       </div>
 
-      <!-- Menu utilisateur (affiché après clic sur User) -->
+      <!-- Menu utilisateur (affichage après clic sur User) -->
       <div class="user-menu" id="user-menu" aria-hidden="true">
         <a class="conv" id="settings-entry" href="#" role="menuitem" tabindex="0" aria-label="Réglages">
           <svg class="ico" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -105,7 +105,7 @@
             <path d="M12 3l9 6-9 6-9-6 9-6Zm0 9l9 6-9 6-9-6 9-6Z" fill="currentColor" opacity=".6"/>
           </svg>
           <select id="model-select" autocomplete="off" title="Sélection du modèle">
-            <option>Chargement…</option>
+            <option>Chargement</option>
           </select>
         </div>
       </div>
@@ -116,7 +116,7 @@
         <div id="model-label" style="font-size:1.4rem; font-weight:600; opacity:.95;">gpt-oss:20b</div>
       </section>
 
-      <!-- 🎯 Barre d'invite améliorée -->
+      <!-- Barre d'invite améliorée -->
 <div class="composer-card">
   <div class="composer-header">
     <button class="icon-btn" id="add-btn" title="Ajouter un fichier" type="button" aria-label="Ajouter un fichier">
@@ -186,7 +186,7 @@
       <div class="settings-body">
         <div class="settings-section">
           <div class="settings-item" style="grid-template-columns:1fr;">
-            <label class="settings-label" for="prompt-text" style="margin-bottom:6px">Instructions pour le comportement de l’IA</label>
+            <label class="settings-label" for="prompt-text" style="margin-bottom:6px">Instructions pour le comportement de l'IA</label>
             <textarea id="prompt-text" placeholder="Décrivez ici les consignes système (ton, contraintes, règles, etc.)." style="width:100%; min-height:220px; resize:vertical;"></textarea>
           </div>
           <div class="settings-item" style="grid-template-columns:1fr;">
@@ -211,7 +211,7 @@
   <script type="module" src="js/ui/autogrow.js"></script>
   <script type="module">
   import { mountModelSelect } from './js/ui/components/ModelSelect.js';
-  import './js/chat/render.js';   // ✅ Ajout pour forcer le chargement de render.js
+  import './js/chat/render.js';   // Ajout pour forcer le chargement de render.js
   window.addEventListener('DOMContentLoaded', mountModelSelect);
   </script>
 

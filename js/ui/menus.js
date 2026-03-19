@@ -1,4 +1,9 @@
 import { qs } from '../core/dom.js';
+import {
+  loadSystemPrompt,
+  readSys,
+  saveSystemPromptValue,
+} from '../net/ollama.js';
 
 export function wireUserMenu(){
   const user = qs('#user-entry'); const menu = qs('#user-menu');
@@ -22,8 +27,26 @@ export function wireSettingsModal(){
 export function wirePromptModal(){
   const pe = qs('#prompt-entry'); const pm = qs('#prompt-modal'); const pt = qs('#prompt-text'); const ps = qs('#prompt-save');
   if(!pe || !pm || !pt || !ps) return;
-  const open = (e)=>{ if(e) e.preventDefault(); pm.style.display='flex'; try{ pt.value = localStorage.getItem('systemPrompt') || ''; }catch(_){} };
-  const save = (e)=>{ if(e) e.preventDefault(); try{ localStorage.setItem('systemPrompt', pt.value||''); }catch(_){} pm.style.display = 'none'; };
+  const open = async (e)=>{
+    if(e) e.preventDefault();
+    pm.style.display='flex';
+    pt.value = readSys();
+    try{
+      await loadSystemPrompt(true);
+      pt.value = readSys();
+    }catch(err){
+      alert(err?.message || 'Impossible de charger le prompt systeme.');
+    }
+  };
+  const save = async (e)=>{
+    if(e) e.preventDefault();
+    try{
+      await saveSystemPromptValue(pt.value || '');
+      pm.style.display = 'none';
+    }catch(err){
+      alert(err?.message || 'Impossible d enregistrer le prompt systeme.');
+    }
+  };
   pe.addEventListener('click', open);
   pe.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' '){ open(e); } });
   ps.addEventListener('click', save);

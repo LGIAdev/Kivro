@@ -42,6 +42,73 @@ def init_db() -> None:
         conn.executescript(schema)
 
 
+def serialize_system_prompt(row: sqlite3.Row | dict | None) -> dict:
+    if row is None:
+        return {
+            'prompt': '',
+            'updatedAt': 0,
+        }
+    item = dict(row)
+    return {
+        'prompt': str(item.get('prompt') or ''),
+        'updatedAt': int(item.get('updated_at') or 0),
+    }
+
+
+def get_system_prompt() -> dict:
+    with connect() as conn:
+        row = conn.execute(
+            '''
+            SELECT prompt, updated_at
+            FROM system_prompt
+            WHERE id = 1
+            '''
+        ).fetchone()
+        if row is not None:
+            return serialize_system_prompt(row)
+
+        ts = now_ms()
+        conn.execute(
+            '''
+            INSERT INTO system_prompt (id, prompt, updated_at)
+            VALUES (1, '', ?)
+            ''',
+            (ts,),
+        )
+        row = conn.execute(
+            '''
+            SELECT prompt, updated_at
+            FROM system_prompt
+            WHERE id = 1
+            '''
+        ).fetchone()
+    return serialize_system_prompt(row)
+
+
+def update_system_prompt(prompt: str | None) -> dict:
+    value = '' if prompt is None else str(prompt)
+    ts = now_ms()
+    with connect() as conn:
+        conn.execute(
+            '''
+            INSERT INTO system_prompt (id, prompt, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              prompt = excluded.prompt,
+              updated_at = excluded.updated_at
+            ''',
+            (value, ts),
+        )
+        row = conn.execute(
+            '''
+            SELECT prompt, updated_at
+            FROM system_prompt
+            WHERE id = 1
+            '''
+        ).fetchone()
+    return serialize_system_prompt(row)
+
+
 def public_url(path: str | None) -> str | None:
     if not path:
         return None

@@ -12,7 +12,11 @@ import {
   releaseUploadItems,
   restorePendingUploads,
 } from '../features/uploads.js';
-import { uploadConversationAttachments } from './conversationsApi.js';
+import {
+  getSystemPrompt,
+  saveSystemPrompt,
+  uploadConversationAttachments,
+} from './conversationsApi.js';
 
 function normalizeLatex(input) {
   if (!input) return '';
@@ -34,9 +38,11 @@ function normalizeLatex(input) {
   return s;
 }
 
-const LS = { base: 'ollamaBase', model: 'ollamaModel', sys: 'systemPrompt' };
+const LS = { base: 'ollamaBase', model: 'ollamaModel' };
 const OCR_PROGRESS_HINT_DELAY_MS = 8000;
 let isSendInFlight = false;
+let systemPrompt = '';
+let systemPromptLoadPromise = null;
 const getRaw = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
@@ -63,8 +69,31 @@ export function readModel() {
 }
 
 export function readSys() {
-  const raw = getRaw(LS.sys);
-  return raw == null ? '' : String(raw);
+  return systemPrompt;
+}
+
+export async function loadSystemPrompt(force = false) {
+  if (!force && systemPromptLoadPromise) return systemPromptLoadPromise;
+
+  systemPromptLoadPromise = (async () => {
+    const payload = await getSystemPrompt();
+    systemPrompt = String(payload?.prompt || '');
+    return systemPrompt;
+  })();
+
+  try {
+    return await systemPromptLoadPromise;
+  } catch (err) {
+    systemPromptLoadPromise = null;
+    throw err;
+  }
+}
+
+export async function saveSystemPromptValue(prompt) {
+  const payload = await saveSystemPrompt(prompt);
+  systemPrompt = String(payload?.prompt || '');
+  systemPromptLoadPromise = Promise.resolve(systemPrompt);
+  return systemPrompt;
 }
 
 export async function ping(base) {
@@ -239,6 +268,14 @@ export async function sendCurrent() {
   const pendingUploads = getPendingUploads();
   if (!text && !pendingUploads.length) return;
   const model = readModel();
+  let sys = '';
+  try {
+    await loadSystemPrompt();
+    sys = readSys();
+  } catch (err) {
+    alert('Impossible de charger le prompt systeme: ' + (err?.message || err));
+    return;
+  }
   const needsOcrFeedback = hasPendingImageUploads(pendingUploads) && !canModelReadFiles(model);
 
   const detachedUploads = pendingUploads.length ? detachPendingUploads() : [];
@@ -265,7 +302,6 @@ export async function sendCurrent() {
     }
 
     const base = readBase();
-    const sys = readSys();
     let aiB = null;
     let ocrStage = 'ocr-reading';
     let hasRenderedModelText = false;
