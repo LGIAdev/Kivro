@@ -70,8 +70,20 @@
   top:12px;
   left:12px;
   z-index:20;
+  display:flex;
+  align-items:center;
+  width:auto;
+  min-width:0;
+  height:34px;
+  padding:0 12px;
+  border-radius:999px;
   opacity:0;
   pointer-events:none;
+}
+.sidebar-toggle-open .brand-left{
+  display:flex;
+  align-items:center;
+  gap:8px;
 }
 .app.sidebar-collapsed .sidebar-toggle-open{
   opacity:1;
