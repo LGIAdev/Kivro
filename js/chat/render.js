@@ -2,10 +2,8 @@
 // Rendu des messages (Markdown + LaTeX) pour Kivro
 // - Convertit les titres (#, ##, ###) en <h1>/<h2>/<h3> (plus de "###" visibles)
 // - Préserve les maths pour KaTeX (\\(...\\), \\[...\\], $$...$$) pendant le rendu Markdown
-// - Expose en global: window.kivroRenderMarkdown, window.kivroNormalizeLatex
 
 import { qs } from '../core/dom.js';
-import { tblToGfm } from '../../assets/js/render/tblgfm.js';
 
 /* -----------------------------------------------------------
  * 1) Normalisation LaTeX (pour KaTeX)
@@ -230,9 +228,185 @@ function renderMarkdown(src){
   return `<div class="markdown-body">${s}</div>`;
 }
 
-function renderModelMessage(rawText){
-  const normalized = tblToGfm(rawText || '');
-  return renderMarkdown(normalized);
+function normalizeMessageText(text){
+  const raw = String(text || '');
+  return raw && !/<table[\s>]/i.test(raw) ? normalizeLatex(raw) : raw;
+}
+
+function splitLegacyThinkTaggedText(text){
+  const raw = String(text || '');
+  const pattern = /<think>([\s\S]*?)(?:<\/think>|$)/gi;
+  const reasoningParts = [];
+  const answerParts = [];
+  let match;
+  let cursor = 0;
+  let hasReasoning = false;
+
+  while ((match = pattern.exec(raw)) !== null) {
+    hasReasoning = true;
+    const start = match.index;
+    answerParts.push(raw.slice(cursor, start));
+    reasoningParts.push(match[1] || '');
+    cursor = pattern.lastIndex;
+    if (!match[0].toLowerCase().includes('</think>')) break;
+  }
+
+  if (!hasReasoning) {
+    return {
+      reasoningText: '',
+      answerText: raw,
+    };
+  }
+
+  answerParts.push(raw.slice(cursor));
+  const reasoningText = reasoningParts.join('\n\n').trim();
+  return {
+    reasoningText,
+    answerText: answerParts.join('').replace(/^\s+/, ''),
+  };
+}
+
+function resolveAssistantDisplayPayload(text, options = {}){
+  const explicitAnswerText = options.answerText == null ? String(text || '') : String(options.answerText);
+  const explicitReasoningText = options.reasoningText == null ? '' : String(options.reasoningText).trim();
+  if (explicitReasoningText) {
+    return {
+      answerText: explicitAnswerText,
+      reasoningText: explicitReasoningText,
+      hasReasoning: true,
+    };
+  }
+
+  const legacy = splitLegacyThinkTaggedText(explicitAnswerText);
+  return {
+    answerText: legacy.answerText,
+    reasoningText: legacy.reasoningText,
+    hasReasoning: !!legacy.reasoningText,
+  };
+}
+
+function formatReasoningDuration(durationMs){
+  const ms = Number(durationMs || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+
+  let totalSeconds = Math.max(1, Math.round(ms / 1000));
+  const parts = [];
+
+  if (totalSeconds >= 3600) {
+    const hours = Math.floor(totalSeconds / 3600);
+    totalSeconds -= hours * 3600;
+    parts.push(`${hours} heure${hours > 1 ? 's' : ''}`);
+  }
+
+  if (totalSeconds >= 60) {
+    const minutes = Math.floor(totalSeconds / 60);
+    totalSeconds -= minutes * 60;
+    parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
+  }
+
+  if (totalSeconds > 0 || parts.length === 0) {
+    parts.push(`${totalSeconds} seconde${totalSeconds > 1 ? 's' : ''}`);
+  }
+
+  return `en ${parts.join(' ')}`;
+}
+
+function renderMarkdownBlock(container, text){
+  const content = String(text || '').trim();
+  if (!content) return false;
+  container.innerHTML = renderMarkdown(normalizeMessageText(content));
+  return true;
+}
+
+function toggleReasoningPanel(button, panel, expanded){
+  const next = Boolean(expanded);
+  button.setAttribute('aria-expanded', next ? 'true' : 'false');
+  panel.hidden = !next;
+}
+
+function renderMathBlocks(container){
+  if (!window.kivroRenderMath) return;
+  const targets = [...container.querySelectorAll('.markdown-body')];
+  if (targets.length === 0 && container.childElementCount === 0 && container.textContent.trim()) {
+    targets.push(container);
+  }
+  for (const target of targets) {
+    try { window.kivroRenderMath(target); } catch (e) { console.warn('kivroRenderMath error:', e); }
+  }
+}
+
+export function updateBubbleContent(container, role, text, options = {}){
+  if (!(container instanceof HTMLElement)) return;
+
+  const preservedExpanded = container.dataset.reasoningExpanded === 'true';
+  container.innerHTML = '';
+  delete container.dataset.reasoningExpanded;
+
+  if (role === 'assistant') {
+    const payload = resolveAssistantDisplayPayload(text, options);
+    if (payload.hasReasoning) {
+      const group = document.createElement('div');
+      group.className = 'assistant-response';
+
+      const reasoningWrap = document.createElement('div');
+      reasoningWrap.className = 'assistant-reasoning';
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'assistant-reasoning-toggle';
+
+      const label = document.createElement('span');
+      label.className = 'assistant-reasoning-label';
+      const durationLabel = formatReasoningDuration(options.reasoningDurationMs);
+      label.textContent = durationLabel
+        ? `Raisonnement du modele ${durationLabel}`
+        : 'Raisonnement du modele';
+
+      const chevron = document.createElement('span');
+      chevron.className = 'assistant-reasoning-chevron';
+
+      toggle.append(label, chevron);
+
+      const panel = document.createElement('div');
+      panel.className = 'assistant-reasoning-panel';
+      renderMarkdownBlock(panel, payload.reasoningText);
+
+      toggle.addEventListener('click', () => {
+        const next = toggle.getAttribute('aria-expanded') !== 'true';
+        container.dataset.reasoningExpanded = next ? 'true' : 'false';
+        toggleReasoningPanel(toggle, panel, next);
+      });
+
+      toggleReasoningPanel(toggle, panel, preservedExpanded);
+      container.dataset.reasoningExpanded = preservedExpanded ? 'true' : 'false';
+      reasoningWrap.append(toggle, panel);
+      group.appendChild(reasoningWrap);
+
+      const answerWrap = document.createElement('div');
+      answerWrap.className = 'assistant-answer';
+      if (renderMarkdownBlock(answerWrap, payload.answerText)) {
+        group.appendChild(answerWrap);
+      }
+
+      container.appendChild(group);
+      appendMessageAttachments(container, options.attachments || []);
+      renderMathBlocks(container);
+      return;
+    }
+
+    if (renderMarkdownBlock(container, payload.answerText)) {
+      appendMessageAttachments(container, options.attachments || []);
+      renderMathBlocks(container);
+      return;
+    }
+  }
+
+  const hasText = !!String(text || '').trim();
+  if (hasText) {
+    container.innerHTML = renderMarkdown(normalizeMessageText(text));
+  }
+  appendMessageAttachments(container, options.attachments || []);
+  renderMathBlocks(container);
 }
 
 /* -----------------------------------------------------------
@@ -330,24 +504,17 @@ export function renderMsg(role, text, options = {}){
 
   const r = document.createElement('div');
   r.className = 'role';
-  r.textContent = (role === 'user' ? 'Vous' : 'IA');
+  const assistantModel = String(options.model || '').trim();
+  r.textContent = (role === 'user' ? 'Vous' : (assistantModel || 'Modele inconnu'));
 
   const b = document.createElement('div');
   b.className = 'bubble';
 
-  const hasText = !!String(text || '').trim();
-  const normalized = hasText && !/<table[\s>]/i.test(text || '') ? normalizeLatex(text || '') : (text || '');
-  b.innerHTML = hasText ? renderMarkdown(normalized) : '';
-  appendMessageAttachments(b, options.attachments || []);
+  updateBubbleContent(b, role, text, options);
 
   row.append(r, b);
   log.appendChild(row);
   row.scrollIntoView({ block: 'end' });
-
-  if (window.kivroRenderMath && hasText) {
-    const target = b.querySelector('.markdown-body') || b;
-    try{ window.kivroRenderMath(target); }catch(e){ console.warn('kivroRenderMath error:', e); }
-  }
 
   return b;
 }
@@ -364,12 +531,3 @@ export function clearChat(){
 }
 
 export { renderMarkdown };
-
-/* -----------------------------------------------------------
- * 6) Exposition globale pour usage cross-module (ollama.js, etc.)
- * ----------------------------------------------------------- */
-if (typeof window !== 'undefined') {
-  window.kivroRenderMarkdown = renderModelMessage;   // utilisé par ollama.js
-  window.kivroNormalizeLatex = normalizeLatex;   // utilisé par ollama.js
-}
-

@@ -10,8 +10,6 @@ import('./features/math/katex-init.js')
     initKatex();
   })
   .catch((err) => console.warn('[KaTeX] not loaded:', err));
-import { wirePyodide } from './features/pyodide.js';
-import { runPython } from './features/python/pyodideLoader.js';
 import { mountHistory, Store } from './store/conversations.js';
 
 const SEL = {
@@ -337,28 +335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   mountStatusPill();
   wireLogout();
   wireUploads();
-  wirePyodide();
   wireSidebarResize();
-
-  const chipPy = document.getElementById('chip-py');
-  if (chipPy) {
-    chipPy.addEventListener('click', async () => {
-      chipPy.disabled = true;
-      try {
-        const code = `
-print("Hello from Pyodide")
-x = 2**10
-print("2**10 =", x)
-`;
-        const { stdout, stderr } = await runPython(code);
-        alert(`STDOUT:\n${stdout}${stderr ? `\n\nSTDERR:\n${stderr}` : ''}`);
-      } catch (e) {
-        alert('Erreur Pyodide: ' + (e?.message || e));
-      } finally {
-        chipPy.disabled = false;
-      }
-    });
-  }
 
   wireNewChatButton();
   wireEnsureConversationAtFirstPromptDelegated();

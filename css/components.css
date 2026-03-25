@@ -48,6 +48,69 @@
   box-sizing:border-box;
 }
 .msg.user .bubble{ background:transparent; border-style:dashed; }
+.assistant-response{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.assistant-reasoning{
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:color-mix(in srgb, var(--surface-soft) 82%, transparent);
+}
+.assistant-reasoning-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  border:none;
+  background:transparent;
+  color:var(--text);
+  cursor:pointer;
+  text-align:left;
+  font:inherit;
+}
+.assistant-reasoning-toggle:hover{
+  background:color-mix(in srgb, var(--hover) 70%, transparent);
+}
+.assistant-reasoning-toggle[aria-expanded="true"]{
+  border-bottom:1px solid var(--border);
+}
+.assistant-reasoning-label{
+  font-weight:600;
+  opacity:.95;
+}
+.assistant-reasoning-chevron{
+  flex:0 0 auto;
+  width:10px;
+  height:10px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  transition:transform .18s ease;
+}
+.assistant-reasoning-chevron::before{
+  content:"";
+  width:6px;
+  height:6px;
+  border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg) translateY(-1px);
+}
+.assistant-reasoning-toggle[aria-expanded="true"] .assistant-reasoning-chevron{
+  transform:rotate(180deg);
+}
+.assistant-reasoning-panel{
+  padding:12px;
+}
+.assistant-reasoning-panel[hidden]{
+  display:none;
+}
+.assistant-answer{
+  min-width:0;
+}
 
 /* ===================== 2) Pastilles / Status ====================== */
 .status-pill{

@@ -45,13 +45,6 @@ body{
   fill:none;
 }
 
-/* Chip "Interpréteur de code" */
-:root[data-theme="light"] .composer-card .chip{
-  background:var(--surface-soft);
-  border-color:var(--chip-border);
-  color:#294866;
-}
-
 :root[data-theme="light"] .side-head .btn{
   color:var(--text);
   background:var(--surface-card);

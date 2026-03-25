@@ -40,6 +40,20 @@ def init_db() -> None:
     schema = SCHEMA_PATH.read_text(encoding='utf-8')
     with connect() as conn:
         conn.executescript(schema)
+        ensure_messages_columns(conn)
+
+
+def ensure_messages_columns(conn: sqlite3.Connection) -> None:
+    columns = {
+        str(row['name']).lower()
+        for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+    }
+    if 'reasoning_text' not in columns:
+        conn.execute('ALTER TABLE messages ADD COLUMN reasoning_text TEXT')
+    if 'model' not in columns:
+        conn.execute('ALTER TABLE messages ADD COLUMN model TEXT')
+    if 'reasoning_duration_ms' not in columns:
+        conn.execute('ALTER TABLE messages ADD COLUMN reasoning_duration_ms INTEGER')
 
 
 def serialize_system_prompt(row: sqlite3.Row | dict | None) -> dict:
@@ -200,7 +214,7 @@ def get_conversation(conversation_id: str) -> dict | None:
             return None
         messages = conn.execute(
             '''
-            SELECT id, conversation_id, role, content, created_at, position
+            SELECT id, conversation_id, role, content, reasoning_text, model, reasoning_duration_ms, created_at, position
             FROM messages
             WHERE conversation_id = ?
             ORDER BY position ASC, id ASC
@@ -422,14 +436,31 @@ def add_message(
     role: str,
     content: str,
     attachment_ids: list[str] | None = None,
+    reasoning_text: str | None = None,
+    model: str | None = None,
+    reasoning_duration_ms: int | None = None,
 ) -> dict | None:
     role = (role or '').strip().lower()
     if role not in {'user', 'assistant', 'system'}:
         raise ValueError('Invalid role.')
 
     attachment_ids = [str(item).strip() for item in (attachment_ids or []) if str(item).strip()]
-    payload = (content or '').strip()
-    if not payload and not attachment_ids:
+    payload = str(content or '').strip()
+    reasoning_payload = str(reasoning_text or '').strip() or None
+    model_name = str(model or '').strip() or None
+    duration_value = None
+    if reasoning_duration_ms is not None:
+        try:
+            parsed_duration = int(reasoning_duration_ms)
+            if parsed_duration > 0:
+                duration_value = parsed_duration
+        except (TypeError, ValueError):
+            duration_value = None
+    if role != 'assistant':
+        reasoning_payload = None
+        model_name = None
+        duration_value = None
+    if not payload and not attachment_ids and not reasoning_payload:
         raise ValueError('Message content cannot be empty.')
 
     ts = now_ms()
@@ -466,10 +497,19 @@ def add_message(
 
         cur = conn.execute(
             '''
-            INSERT INTO messages (conversation_id, role, content, created_at, position)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (
+              conversation_id,
+              role,
+              content,
+              reasoning_text,
+              model,
+              reasoning_duration_ms,
+              created_at,
+              position
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''',
-            (conversation_id, role, payload, ts, position),
+            (conversation_id, role, payload, reasoning_payload, model_name, duration_value, ts, position),
         )
         message_id = int(cur.lastrowid)
 
@@ -489,7 +529,7 @@ def add_message(
         )
         row = conn.execute(
             '''
-            SELECT id, conversation_id, role, content, created_at, position
+            SELECT id, conversation_id, role, content, reasoning_text, model, reasoning_duration_ms, created_at, position
             FROM messages
             WHERE id = ?
             ''',

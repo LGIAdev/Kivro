@@ -1,7 +1,7 @@
 ﻿// js/net/ollama.js
 // Flux reseau Ollama + rendu des messages (compatible KaTeX)
 
-import { renderMsg } from '../chat/render.js';
+import { renderMsg, updateBubbleContent } from '../chat/render.js';
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
 import { canModelReadFiles } from '../config/file-capable-models.js';
@@ -18,28 +18,36 @@ import {
   uploadConversationAttachments,
 } from './conversationsApi.js';
 
-function normalizeLatex(input) {
-  if (!input) return '';
-  let s = String(input);
-
-  s = s.replace(/```(?:math|latex)?\s*([\s\S]*?)```/gi, (_, body) => `\\[${body.trim()}\\]`);
-  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, body) => `\\[${body.trim()}\\]`);
-
-  if (!/\\\(|\\\[/.test(s)) {
-    s = s.replace(/\$([^\$]+)\$/g, (_, body) => `\\(${body.trim()}\\)`);
-  }
-
-  s = s.replace(/\\\\\(/g, '\\(')
-    .replace(/\\\\\)/g, '\\)')
-    .replace(/\\\\\[/g, '\\[')
-    .replace(/\\\\\]/g, '\\]')
-    .replace(/\\\\([A-Za-z])/g, '\\$1');
-
-  return s;
-}
-
 const LS = { base: 'ollamaBase', model: 'ollamaModel' };
 const OCR_PROGRESS_HINT_DELAY_MS = 8000;
+const THINK_START_TAG = '<think>';
+const THINK_END_TAG = '</think>';
+const CHAT_REASONING_PATHS = [
+  'message.thinking',
+  'message.reasoning',
+  'message.reasoning_content',
+  'message.thought',
+  'thinking',
+  'reasoning',
+  'reasoning_content',
+  'thought',
+];
+const CHAT_ANSWER_PATHS = [
+  'message.content',
+  'response',
+];
+const GENERATE_REASONING_PATHS = [
+  'thinking',
+  'reasoning',
+  'reasoning_content',
+  'message.thinking',
+  'message.reasoning',
+  'message.reasoning_content',
+];
+const GENERATE_ANSWER_PATHS = [
+  'response',
+  'message.content',
+];
 let isSendInFlight = false;
 let systemPrompt = '';
 let systemPromptLoadPromise = null;
@@ -94,6 +102,181 @@ export async function saveSystemPromptValue(prompt) {
   systemPrompt = String(payload?.prompt || '');
   systemPromptLoadPromise = Promise.resolve(systemPrompt);
   return systemPrompt;
+}
+
+function readPathValue(obj, path) {
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+
+function coerceTextValue(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => coerceTextValue(item)).filter(Boolean).join('');
+  }
+  if (value && typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.content === 'string') return value.content;
+  }
+  return '';
+}
+
+function pickFirstString(obj, paths) {
+  for (const path of (paths || [])) {
+    const value = coerceTextValue(readPathValue(obj, path));
+    if (value) return value;
+  }
+  return '';
+}
+
+function normalizeStreamChunk(obj, kind) {
+  const reasoningChunk = pickFirstString(
+    obj,
+    kind === 'generate' ? GENERATE_REASONING_PATHS : CHAT_REASONING_PATHS,
+  );
+  const answerChunk = pickFirstString(
+    obj,
+    kind === 'generate' ? GENERATE_ANSWER_PATHS : CHAT_ANSWER_PATHS,
+  );
+
+  return {
+    reasoningChunk,
+    answerChunk,
+  };
+}
+
+function createAssistantStreamState() {
+  return {
+    answerText: '',
+    reasoningText: '',
+    reasoningStartedAt: null,
+    reasoningEndedAt: null,
+    tagMode: 'answer',
+    tagBuffer: '',
+    nativeReasoningSeen: false,
+  };
+}
+
+function markReasoningStarted(state) {
+  if (state.reasoningStartedAt === null) state.reasoningStartedAt = Date.now();
+}
+
+function markReasoningEnded(state) {
+  if (state.reasoningStartedAt !== null && state.reasoningEndedAt === null) {
+    state.reasoningEndedAt = Date.now();
+  }
+}
+
+function appendReasoningText(state, text) {
+  const value = String(text || '');
+  if (!value) return;
+  markReasoningStarted(state);
+  state.reasoningText += value;
+}
+
+function appendAnswerText(state, text) {
+  const value = String(text || '');
+  if (!value) return;
+  if (state.reasoningStartedAt !== null && state.reasoningEndedAt === null) {
+    markReasoningEnded(state);
+  }
+  state.answerText += value;
+}
+
+function partialTagSuffixLength(text, tag) {
+  const source = String(text || '');
+  for (let len = Math.min(source.length, tag.length - 1); len > 0; len -= 1) {
+    if (tag.startsWith(source.slice(-len))) return len;
+  }
+  return 0;
+}
+
+function consumeTaggedAnswerChunk(state, chunk) {
+  let input = state.tagBuffer + String(chunk || '');
+  state.tagBuffer = '';
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    if (state.tagMode === 'reasoning') {
+      const closeIdx = input.indexOf(THINK_END_TAG, cursor);
+      if (closeIdx === -1) {
+        const partialLength = partialTagSuffixLength(input.slice(cursor), THINK_END_TAG);
+        const end = input.length - partialLength;
+        appendReasoningText(state, input.slice(cursor, end));
+        state.tagBuffer = input.slice(end);
+        break;
+      }
+
+      appendReasoningText(state, input.slice(cursor, closeIdx));
+      cursor = closeIdx + THINK_END_TAG.length;
+      state.tagMode = 'answer';
+      markReasoningEnded(state);
+      continue;
+    }
+
+    const openIdx = input.indexOf(THINK_START_TAG, cursor);
+    if (openIdx === -1) {
+      const partialLength = partialTagSuffixLength(input.slice(cursor), THINK_START_TAG);
+      const end = input.length - partialLength;
+      appendAnswerText(state, input.slice(cursor, end));
+      state.tagBuffer = input.slice(end);
+      break;
+    }
+
+    appendAnswerText(state, input.slice(cursor, openIdx));
+    cursor = openIdx + THINK_START_TAG.length;
+    state.tagMode = 'reasoning';
+  }
+}
+
+function mergeAssistantStreamChunk(state, chunk) {
+  if (!chunk) return;
+
+  if (chunk.reasoningChunk) {
+    state.nativeReasoningSeen = true;
+    appendReasoningText(state, chunk.reasoningChunk);
+  }
+
+  if (!chunk.answerChunk) return;
+  if (state.nativeReasoningSeen) {
+    appendAnswerText(state, chunk.answerChunk);
+    return;
+  }
+  consumeTaggedAnswerChunk(state, chunk.answerChunk);
+}
+
+function buildAssistantPayload(state, { live = false } = {}) {
+  const reasoningText = String(state?.reasoningText || '');
+  const answerText = String(state?.answerText || '');
+  let durationMs = null;
+  if (state?.reasoningStartedAt !== null) {
+    const endedAt = state.reasoningEndedAt ?? (live ? Date.now() : null);
+    if (endedAt !== null) {
+      durationMs = Math.max(1, endedAt - state.reasoningStartedAt);
+    }
+  }
+  return {
+    answerText,
+    reasoningText,
+    reasoningDurationMs: durationMs,
+  };
+}
+
+function finalizeAssistantStreamState(state) {
+  if (state.tagBuffer) {
+    if (state.tagMode === 'reasoning') {
+      appendReasoningText(state, state.tagBuffer);
+    } else {
+      appendAnswerText(state, state.tagBuffer);
+    }
+    state.tagBuffer = '';
+  }
+  if (state.reasoningStartedAt !== null && state.reasoningEndedAt === null) {
+    markReasoningEnded(state);
+  }
+  return buildAssistantPayload(state);
 }
 
 export async function ping(base) {
@@ -185,11 +368,17 @@ export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 
       if (!line) continue;
       try {
         const obj = JSON.parse(line);
-        if (obj.message && typeof obj.message.content === 'string') yield obj.message.content;
+        yield normalizeStreamChunk(obj, 'chat');
         if (obj.done) return;
       } catch (_) {}
     }
   }
+
+  const tail = buf.trim();
+  if (!tail) return;
+  try {
+    yield normalizeStreamChunk(JSON.parse(tail), 'chat');
+  } catch (_) {}
 }
 
 export async function* streamGenerate({ base, model, sys, prompt, convId, maxPast = 16 }) {
@@ -220,22 +409,27 @@ export async function* streamGenerate({ base, model, sys, prompt, convId, maxPas
       if (!line) continue;
       try {
         const obj = JSON.parse(line);
-        if (typeof obj.response === 'string') yield obj.response;
+        yield normalizeStreamChunk(obj, 'generate');
         if (obj.done) return;
       } catch (_) {}
     }
   }
+
+  const tail = buf.trim();
+  if (!tail) return;
+  try {
+    yield normalizeStreamChunk(JSON.parse(tail), 'generate');
+  } catch (_) {}
 }
 
-function renderAssistantChunk(target, text) {
-  target.innerHTML = (
-    (window.kivroRenderMarkdown
-      ? window.kivroRenderMarkdown(
-        window.kivroNormalizeLatex ? window.kivroNormalizeLatex(text) : text,
-      )
-      : (window.kivroNormalizeLatex ? window.kivroNormalizeLatex(text) : text))
-  );
-  if (window.kivroRenderMath) window.kivroRenderMath(target);
+function renderAssistantChunk(target, payload, options = {}) {
+  const answerText = payload?.answerText ?? '';
+  updateBubbleContent(target, 'assistant', answerText, {
+    ...options,
+    answerText,
+    reasoningText: payload?.reasoningText ?? '',
+    reasoningDurationMs: payload?.reasoningDurationMs ?? null,
+  });
 }
 
 function hasPendingImageUploads(items = []) {
@@ -309,7 +503,7 @@ export async function sendCurrent() {
     const updateOcrStatus = (stage) => {
       ocrStage = stage;
       if (!aiB || hasRenderedModelText) return;
-      renderAssistantChunk(aiB, statusMessageFor(stage));
+      renderAssistantChunk(aiB, { answerText: statusMessageFor(stage) });
     };
 
     if (needsOcrFeedback) {
@@ -343,7 +537,7 @@ export async function sendCurrent() {
     }
 
     if (needsOcrFeedback) {
-      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'));
+      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'), { model });
     }
 
     let uploadedAttachments = [];
@@ -355,7 +549,7 @@ export async function sendCurrent() {
         restorePendingUploads(detachedUploads, message);
         shouldReleaseDetachedUploads = false;
         if (aiB) {
-          renderAssistantChunk(aiB, message);
+          renderAssistantChunk(aiB, { answerText: message }, { model });
         } else {
           alert(message);
         }
@@ -380,7 +574,7 @@ export async function sendCurrent() {
     if (!prepared.ok) {
       const message = prepared.message || 'Les fichiers joints ne peuvent pas etre envoyes.';
       if (aiB) {
-        renderAssistantChunk(aiB, message);
+        renderAssistantChunk(aiB, { answerText: message }, { model });
       } else {
         alert(message);
       }
@@ -394,8 +588,8 @@ export async function sendCurrent() {
       await mountHistory();
     } catch (_) {}
 
-    if (!aiB) aiB = renderMsg('assistant', '');
-    let aiText = '';
+    if (!aiB) aiB = renderMsg('assistant', '', { model });
+    const assistantState = createAssistantStreamState();
     try {
       for await (const chunk of streamChat({
         base,
@@ -405,17 +599,30 @@ export async function sendCurrent() {
         convId,
         images: prepared.imagePayloads || [],
       })) {
-        aiText += chunk;
-        if (!aiText.trim()) continue;
+        mergeAssistantStreamChunk(assistantState, chunk);
+        const livePayload = buildAssistantPayload(assistantState, { live: true });
+        if (!livePayload.answerText.trim() && !livePayload.reasoningText.trim()) continue;
         hasRenderedModelText = true;
-        renderAssistantChunk(aiB, aiText);
+        renderAssistantChunk(aiB, livePayload, {
+          model,
+        });
       }
-      if (convId) await Store.addMsg(convId, 'assistant', aiText);
+      const finalPayload = finalizeAssistantStreamState(assistantState);
+      if (finalPayload.answerText.trim() || finalPayload.reasoningText.trim()) {
+        renderAssistantChunk(aiB, finalPayload, { model });
+      }
+      if (convId && (finalPayload.answerText.trim() || finalPayload.reasoningText.trim())) {
+        await Store.addMsg(convId, 'assistant', finalPayload.answerText, {
+          reasoningText: finalPayload.reasoningText,
+          model,
+          reasoningDurationMs: finalPayload.reasoningDurationMs,
+        });
+      }
       try { await mountHistory(); } catch (_) {}
     } catch (err) {
       const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
-      renderAssistantChunk(aiB, msg);
-      if (convId) await Store.addMsg(convId, 'assistant', msg);
+      renderAssistantChunk(aiB, { answerText: msg, reasoningText: '', reasoningDurationMs: null }, { model });
+      if (convId) await Store.addMsg(convId, 'assistant', msg, { model });
       try { await mountHistory(); } catch (_) {}
       console.warn('Fetch error', err);
     }

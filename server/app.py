@@ -126,6 +126,9 @@ class KivroHandler(SimpleHTTPRequestHandler):
                         role=body.get('role', ''),
                         content=body.get('content', ''),
                         attachment_ids=body.get('attachment_ids') or [],
+                        reasoning_text=body.get('reasoning_text'),
+                        model=body.get('model'),
+                        reasoning_duration_ms=body.get('reasoning_duration_ms'),
                     )
                     if message is None:
                         self.send_error_json(HTTPStatus.NOT_FOUND, 'Conversation not found.')

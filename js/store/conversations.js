@@ -41,6 +41,11 @@ function normalizeMessage(raw) {
     conversationId: raw.conversationId ?? raw.conversation_id ?? null,
     role: (raw.role || '').toLowerCase(),
     content: String(raw.content ?? raw.text ?? ''),
+    reasoningText: raw.reasoningText == null && raw.reasoning_text == null
+      ? null
+      : String(raw.reasoningText ?? raw.reasoning_text ?? ''),
+    model: raw.model == null ? null : String(raw.model),
+    reasoningDurationMs: Number(raw.reasoningDurationMs ?? raw.reasoning_duration_ms ?? 0) || null,
     createdAt: Number(raw.createdAt ?? raw.created_at ?? Date.now()),
     position: Number(raw.position ?? 0),
     attachments: Array.isArray(raw.attachments) ? raw.attachments.map(normalizeAttachment).filter(Boolean) : [],
@@ -160,7 +165,12 @@ async function openConversation(id) {
   const fullConversation = await Store.fetch(id);
   clearChat();
   for (const message of (fullConversation?.messages || [])) {
-    renderMsg(message.role, message.content, { attachments: message.attachments || [] });
+    renderMsg(message.role, message.content, {
+      attachments: message.attachments || [],
+      reasoningText: message.reasoningText,
+      model: message.model,
+      reasoningDurationMs: message.reasoningDurationMs,
+    });
   }
 }
 
@@ -231,6 +241,9 @@ export const Store = {
       role,
       content,
       attachment_ids: options.attachmentIds || [],
+      reasoning_text: options.reasoningText || null,
+      model: options.model || null,
+      reasoning_duration_ms: options.reasoningDurationMs || null,
     }));
     let conversation = this.get(id);
     if (!conversation) {
