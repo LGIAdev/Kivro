@@ -427,6 +427,7 @@ function renderAssistantChunk(target, payload, options = {}) {
   updateBubbleContent(target, 'assistant', answerText, {
     ...options,
     answerText,
+    pyodideFinal: options.pyodideFinal !== false,
     reasoningText: payload?.reasoningText ?? '',
     reasoningDurationMs: payload?.reasoningDurationMs ?? null,
   });
@@ -537,7 +538,7 @@ export async function sendCurrent() {
     }
 
     if (needsOcrFeedback) {
-      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'), { model });
+      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'), { model, pyodideFinal: false });
     }
 
     let uploadedAttachments = [];
@@ -605,11 +606,12 @@ export async function sendCurrent() {
         hasRenderedModelText = true;
         renderAssistantChunk(aiB, livePayload, {
           model,
+          pyodideFinal: false,
         });
       }
       const finalPayload = finalizeAssistantStreamState(assistantState);
       if (finalPayload.answerText.trim() || finalPayload.reasoningText.trim()) {
-        renderAssistantChunk(aiB, finalPayload, { model });
+        renderAssistantChunk(aiB, finalPayload, { model, pyodideFinal: true });
       }
       if (convId && (finalPayload.answerText.trim() || finalPayload.reasoningText.trim())) {
         await Store.addMsg(convId, 'assistant', finalPayload.answerText, {
@@ -621,7 +623,7 @@ export async function sendCurrent() {
       try { await mountHistory(); } catch (_) {}
     } catch (err) {
       const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
-      renderAssistantChunk(aiB, { answerText: msg, reasoningText: '', reasoningDurationMs: null }, { model });
+      renderAssistantChunk(aiB, { answerText: msg, reasoningText: '', reasoningDurationMs: null }, { model, pyodideFinal: true });
       if (convId) await Store.addMsg(convId, 'assistant', msg, { model });
       try { await mountHistory(); } catch (_) {}
       console.warn('Fetch error', err);

@@ -4,6 +4,7 @@
 // - Préserve les maths pour KaTeX (\\(...\\), \\[...\\], $$...$$) pendant le rendu Markdown
 
 import { qs } from '../core/dom.js';
+import { runPython } from '../features/python/pyodideLoader.js';
 
 /* -----------------------------------------------------------
  * 1) Normalisation LaTeX (pour KaTeX)
@@ -13,9 +14,6 @@ import { qs } from '../core/dom.js';
 function normalizeLatex(input){
   if (!input) return '';
   let s = String(input);
-
-  // Blocs math: ```math ...``` ou ```latex ...``` -> \[ ... \]
-  s = s.replace(/```(?:math|latex)?\s*([\s\S]*?)```/gi, (_, body) => `\\[${body.trim()}\\]`);
 
   // $$ ... $$ -> \[ ... \]
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, body) => `\\[${body.trim()}\\]`);
@@ -38,6 +36,54 @@ function normalizeLatex(input){
  * ----------------------------------------------------------- */
 function escapeHtml(s){
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function escapeHtmlAttr(s){
+  return escapeHtml(String(s || '')).replace(/"/g, '&quot;');
+}
+
+function parseFenceInfo(info){
+  const raw = String(info || '').trim();
+  const parts = raw ? raw.split(/\s+/) : [];
+  const lang = (parts.shift() || '').toLowerCase();
+  return { raw, lang };
+}
+
+function renderCodeFence(info, body){
+  const parsed = parseFenceInfo(info);
+  const source = String(body || '').replace(/\n$/, '');
+  return `<pre class="kivro-fenced-code" data-code-lang="${escapeHtmlAttr(parsed.lang)}" data-code-info="${escapeHtmlAttr(parsed.raw)}"><code>${escapeHtml(source)}</code></pre>`;
+}
+
+function restoreMathToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function restoreCodeToken(token){
+  if (token && token.type === 'fence') return renderCodeFence(token.info, token.body);
+  return '';
+}
+
+function isPythonFenceLanguage(lang){
+  return ['python', 'py', 'pyodide'].includes(String(lang || '').toLowerCase());
+}
+
+async function copyTextToClipboard(text){
+  const value = String(text || '');
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const area = document.createElement('textarea');
+  area.value = value;
+  area.setAttribute('readonly', 'readonly');
+  area.style.position = 'fixed';
+  area.style.top = '-9999px';
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  document.body.removeChild(area);
 }
 
 // LaTeX array/tabular → Markdown GFM (texte)
@@ -161,22 +207,39 @@ function renderMarkdown(src){
   let s = String(src);
   
   // Convertit d’abord les tableaux LaTeX en GFM (texte)
-  s = latexArrayToGfm(s);
 
   // 2.1 Sauvegarde provisoire: maths (\(...\), \[...\], $$...$$) et fences ```...```
-  const tokens = [];
-  const save = (m) => { const t = `@@TK_${tokens.length}@@`; tokens.push(m); return t; };
+  const codeTokens = [];
+  const mathTokens = [];
+  const saveCode = (token) => {
+    const marker = `@@CODE_${codeTokens.length}@@`;
+    codeTokens.push(token);
+    return marker;
+  };
+  const saveMath = (token) => {
+    const marker = `@@MATH_${mathTokens.length}@@`;
+    mathTokens.push(token);
+    return marker;
+  };
 
   // Maths déjà normalisées: \(...\), \[...\]
-  s = s.replace(/\\\(([\s\S]*?)\\\)/g, save);
-  s = s.replace(/\\\[([\s\S]*?)\\\]/g, save);
   // Par sécurité: $$...$$ (au cas où un texte non-normalisé arrive ici)
-  s = s.replace(/\$\$([\s\S]*?)\$\$/g, save);
 
   // Fences de code
-  s = s.replace(/```([\s\S]*?)```/g, (m) => save(m));
+  s = s.replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (_, info, body) => {
+    const parsed = parseFenceInfo(info);
+    if (['math', 'latex'].includes(parsed.lang)) {
+      return `\\[${String(body || '').trim()}\\]`;
+    }
+    return saveCode({ type: 'fence', info, body });
+  });
 
   // 2.2 Échapper le HTML restant
+  s = latexArrayToGfm(s);
+  s = normalizeLatex(s);
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, saveMath);
+  s = s.replace(/\\\[([\s\S]*?)\\\]/g, saveMath);
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, saveMath);
   s = escapeHtml(s);
   
   // Supprimer totalement les séparateurs Markdown (aucune ligne affichée)
@@ -212,7 +275,7 @@ function renderMarkdown(src){
     .replace(/`([^`\n]+)`/g, '<code>$1</code>');
 		
   // 2.7 Paragraphes : regrouper ce qui n'est pas déjà un bloc HTML connu
-  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@TK_)/;
+  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@(?:CODE|MATH)_)/;
   s = s
     .split(/\n{2,}/)
     .map(chunk => {
@@ -223,14 +286,10 @@ function renderMarkdown(src){
     .join('\n');
 
   // 2.8 Réinsertion des tokens (maths + fences)
-  s = s.replace(/@@TK_(\d+)@@/g, (_, i)=> tokens[Number(i)]);
+  s = s.replace(/@@MATH_(\d+)@@/g, (_, i)=> restoreMathToken(mathTokens[Number(i)]));
+  s = s.replace(/@@CODE_(\d+)@@/g, (_, i)=> restoreCodeToken(codeTokens[Number(i)]));
 
   return `<div class="markdown-body">${s}</div>`;
-}
-
-function normalizeMessageText(text){
-  const raw = String(text || '');
-  return raw && !/<table[\s>]/i.test(raw) ? normalizeLatex(raw) : raw;
 }
 
 function splitLegacyThinkTaggedText(text){
@@ -314,7 +373,7 @@ function formatReasoningDuration(durationMs){
 function renderMarkdownBlock(container, text){
   const content = String(text || '').trim();
   if (!content) return false;
-  container.innerHTML = renderMarkdown(normalizeMessageText(content));
+  container.innerHTML = renderMarkdown(content);
   return true;
 }
 
@@ -332,6 +391,171 @@ function renderMathBlocks(container){
   }
   for (const target of targets) {
     try { window.kivroRenderMath(target); } catch (e) { console.warn('kivroRenderMath error:', e); }
+  }
+}
+
+function setPyodideCodeExpanded(codeBody, closeButton, openButton, expanded){
+  const isExpanded = Boolean(expanded);
+  codeBody.hidden = !isExpanded;
+  closeButton.hidden = !isExpanded;
+  openButton.hidden = isExpanded;
+}
+
+function appendOutputSection(container, labelText, value, className){
+  const content = String(value || '').trim();
+  if (!content) return;
+
+  const section = document.createElement('div');
+  section.className = `pyodide-output-section ${className}`.trim();
+
+  const label = document.createElement('div');
+  label.className = 'pyodide-output-label';
+  label.textContent = labelText;
+
+  const pre = document.createElement('pre');
+  pre.className = 'pyodide-output-text';
+  pre.textContent = content;
+
+  section.append(label, pre);
+  container.appendChild(section);
+}
+
+function renderPyodideResult(resultCard, result){
+  resultCard.classList.remove('is-loading', 'is-error');
+  resultCard.innerHTML = '';
+
+  const resultBody = document.createElement('div');
+  resultBody.className = 'pyodide-result-body';
+
+  const title = document.createElement('div');
+  title.className = 'pyodide-result-title';
+  title.textContent = 'Resultat';
+  resultBody.appendChild(title);
+
+  const images = Array.isArray(result.images) ? result.images.filter(Boolean) : [];
+  if (images.length) {
+    const gallery = document.createElement('div');
+    gallery.className = 'pyodide-image-gallery';
+    for (const image of images) {
+      const figure = document.createElement('figure');
+      figure.className = 'pyodide-image-frame';
+      const img = document.createElement('img');
+      img.src = image.dataUrl || '';
+      img.alt = 'Sortie matplotlib';
+      figure.appendChild(img);
+      gallery.appendChild(figure);
+    }
+    resultBody.appendChild(gallery);
+  }
+
+  appendOutputSection(resultBody, 'Sortie', result.stdout, 'is-stdout');
+  appendOutputSection(resultBody, 'Avertissements', result.stderr, 'is-stderr');
+  appendOutputSection(resultBody, 'Erreur', result.error, 'is-error');
+
+  if (!images.length && !String(result.stdout || '').trim() && !String(result.stderr || '').trim() && !String(result.error || '').trim()) {
+    const empty = document.createElement('div');
+    empty.className = 'pyodide-output-empty';
+    empty.textContent = 'Execution terminee sans resultat visible.';
+    resultBody.appendChild(empty);
+  }
+
+  if (result.status === 'error' || String(result.error || '').trim()) {
+    resultCard.classList.add('is-error');
+  }
+
+  resultCard.appendChild(resultBody);
+  renderMathBlocks(resultCard);
+}
+
+async function hydratePyodideBlock(pre){
+  const lang = pre.dataset.codeLang || '';
+  if (!isPythonFenceLanguage(lang)) return;
+  if (pre.closest('.pyodide-inline-block')) return;
+
+  const code = pre.querySelector('code')?.textContent || pre.textContent || '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pyodide-inline-block';
+
+  const codeCard = document.createElement('div');
+  codeCard.className = 'pyodide-code-card';
+
+  const header = document.createElement('div');
+  header.className = 'pyodide-code-header';
+
+  const langLabel = document.createElement('span');
+  langLabel.className = 'pyodide-code-lang';
+  langLabel.textContent = lang || 'python';
+
+  const actions = document.createElement('div');
+  actions.className = 'pyodide-code-actions';
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'pyodide-code-action';
+  closeButton.textContent = 'Fermer';
+
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'pyodide-code-action';
+  openButton.textContent = 'Ouvrir';
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'pyodide-code-action';
+  copyButton.textContent = 'Copier';
+
+  const codeBody = document.createElement('div');
+  codeBody.className = 'pyodide-code-body';
+
+  const resultCard = document.createElement('div');
+  resultCard.className = 'pyodide-result-card is-loading';
+  resultCard.innerHTML = '<div class="pyodide-result-loading">Execution Pyodide en cours...</div>';
+
+  closeButton.addEventListener('click', () => setPyodideCodeExpanded(codeBody, closeButton, openButton, false));
+  openButton.addEventListener('click', () => setPyodideCodeExpanded(codeBody, closeButton, openButton, true));
+  copyButton.addEventListener('click', async () => {
+    const original = copyButton.textContent;
+    try {
+      await copyTextToClipboard(code);
+      copyButton.textContent = 'Copie';
+    } catch (_) {
+      copyButton.textContent = 'Echec copie';
+    }
+    window.setTimeout(() => {
+      copyButton.textContent = original;
+    }, 1200);
+  });
+
+  actions.append(closeButton, openButton, copyButton);
+  header.append(langLabel, actions);
+
+  const parent = pre.parentNode;
+  if (!parent) return;
+
+  parent.replaceChild(wrapper, pre);
+  codeBody.appendChild(pre);
+  codeCard.append(header, codeBody);
+  wrapper.append(codeCard, resultCard);
+  setPyodideCodeExpanded(codeBody, closeButton, openButton, true);
+
+  try {
+    const result = await runPython(code);
+    renderPyodideResult(resultCard, result);
+  } catch (error) {
+    renderPyodideResult(resultCard, {
+      status: 'error',
+      stdout: '',
+      stderr: '',
+      error: error?.message || 'Execution Pyodide impossible.',
+      images: [],
+    });
+  }
+}
+
+function hydratePyodideBlocks(container){
+  const blocks = [...container.querySelectorAll('pre.kivro-fenced-code[data-code-lang]')];
+  for (const block of blocks) {
+    hydratePyodideBlock(block);
   }
 }
 
@@ -385,6 +609,7 @@ export function updateBubbleContent(container, role, text, options = {}){
       const answerWrap = document.createElement('div');
       answerWrap.className = 'assistant-answer';
       if (renderMarkdownBlock(answerWrap, payload.answerText)) {
+        if (options.pyodideFinal !== false) hydratePyodideBlocks(answerWrap);
         group.appendChild(answerWrap);
       }
 
@@ -395,6 +620,7 @@ export function updateBubbleContent(container, role, text, options = {}){
     }
 
     if (renderMarkdownBlock(container, payload.answerText)) {
+      if (options.pyodideFinal !== false) hydratePyodideBlocks(container);
       appendMessageAttachments(container, options.attachments || []);
       renderMathBlocks(container);
       return;
@@ -403,7 +629,7 @@ export function updateBubbleContent(container, role, text, options = {}){
 
   const hasText = !!String(text || '').trim();
   if (hasText) {
-    container.innerHTML = renderMarkdown(normalizeMessageText(text));
+    container.innerHTML = renderMarkdown(text);
   }
   appendMessageAttachments(container, options.attachments || []);
   renderMathBlocks(container);

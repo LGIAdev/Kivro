@@ -160,3 +160,174 @@
 .messages .md .muted{ color: var(--kivro-tbl-muted); font-size:.95rem; }
 .messages .md table{ outline:3px solid #10b981 !important; }
 
+.markdown-body pre.kivro-fenced-code {
+  margin: 0.6em 0;
+}
+
+.pyodide-inline-block {
+  margin: 0.9rem 0 1rem;
+}
+
+.pyodide-code-card,
+.pyodide-result-card {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: #0b1220;
+  box-shadow: 0 14px 32px rgba(2, 6, 23, 0.28);
+}
+
+.pyodide-code-card {
+  overflow: hidden;
+}
+
+.pyodide-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.pyodide-code-lang {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.pyodide-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pyodide-code-action {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  background: rgba(59, 130, 246, 0.14);
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.pyodide-code-action:hover {
+  background: rgba(96, 165, 250, 0.24);
+  transform: translateY(-1px);
+}
+
+.pyodide-code-action[hidden] {
+  display: none;
+}
+
+.pyodide-code-body {
+  padding: 0;
+}
+
+.pyodide-code-body pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.pyodide-code-body code,
+.pyodide-output-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.pyodide-result-card {
+  margin-top: 10px;
+  padding: 14px 16px;
+}
+
+.pyodide-result-card.is-error {
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.pyodide-result-body {
+  display: grid;
+  gap: 12px;
+}
+
+.pyodide-result-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.pyodide-result-loading,
+.pyodide-output-empty {
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.pyodide-output-section {
+  display: grid;
+  gap: 6px;
+}
+
+.pyodide-output-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.pyodide-output-section.is-error .pyodide-output-label {
+  color: #fca5a5;
+}
+
+.pyodide-output-text {
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #f8fafc;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.pyodide-image-gallery {
+  display: grid;
+  gap: 12px;
+}
+
+.pyodide-image-frame {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.94);
+  overflow: hidden;
+}
+
+.pyodide-image-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: white;
+}
+
+@media (max-width: 720px) {
+  .pyodide-code-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pyodide-code-actions {
+    width: 100%;
+  }
+}
+

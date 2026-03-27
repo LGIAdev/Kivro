@@ -13,6 +13,12 @@ Status: project under active development.
 
 ---
 
+## Releases
+
+- [Releases v2026.3.27](releases/v2026.3.27.md)
+
+---
+
 ## Current features
 
 - Local Ollama integration

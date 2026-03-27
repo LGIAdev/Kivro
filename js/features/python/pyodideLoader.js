@@ -1,56 +1,158 @@
-// Charge Pyodide depuis /assets/pyodide et expose runPython(code)
+const PYODIDE_BASE_PATH = '/assets/pyodide/';
+const REQUIRED_PACKAGES = [
+  'micropip',
+  'numpy',
+  'scipy',
+  'sympy',
+  'matplotlib',
+];
+
+const PYTHON_RUNNER = `
+import base64
+import io
+import json
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
+
+stdout_io = io.StringIO()
+stderr_io = io.StringIO()
+images = []
+error = ""
+status = "ok"
+namespace = {"__name__": "__main__"}
+
+try:
+    try:
+        import matplotlib
+        matplotlib.use("AGG")
+    except Exception:
+        pass
+
+    with redirect_stdout(stdout_io), redirect_stderr(stderr_io):
+        exec(__kivro_user_code, namespace, namespace)
+
+    try:
+        import matplotlib.pyplot as plt
+
+        for figure_number in list(plt.get_fignums()):
+            figure = plt.figure(figure_number)
+            buffer = io.BytesIO()
+            figure.savefig(buffer, format="png", bbox_inches="tight")
+            buffer.seek(0)
+            images.append({
+                "type": "image/png",
+                "dataUrl": "data:image/png;base64," + base64.b64encode(buffer.read()).decode("ascii"),
+            })
+
+        if plt.get_fignums():
+            plt.close("all")
+    except Exception as plot_error:
+        stderr_io.write("\\n[matplotlib] " + str(plot_error).strip() + "\\n")
+except Exception:
+    status = "error"
+    error = traceback.format_exc()
+
+json.dumps({
+    "status": status,
+    "stdout": stdout_io.getvalue().strip(),
+    "stderr": stderr_io.getvalue().strip(),
+    "error": error.strip(),
+    "images": images,
+})
+`;
+
 let pyodideReadyPromise = null;
+const executionCache = new Map();
+
+function assetsBaseUrl() {
+  return new URL(PYODIDE_BASE_PATH, window.location.href).href;
+}
+
+async function ensurePackages(pyodide) {
+  if (pyodide.__kivroPackagesLoaded) return;
+  await pyodide.loadPackage(REQUIRED_PACKAGES);
+  pyodide.__kivroPackagesLoaded = true;
+}
+
+function normalizeResult(payload) {
+  const result = payload && typeof payload === 'object' ? payload : {};
+  return {
+    status: result.status === 'error' ? 'error' : 'ok',
+    stdout: String(result.stdout || '').trim(),
+    stderr: String(result.stderr || '').trim(),
+    error: String(result.error || '').trim(),
+    images: Array.isArray(result.images) ? result.images.filter(Boolean) : [],
+  };
+}
+
+async function executePython(code) {
+  const pyodide = await ensurePyodide();
+  pyodide.globals.set('__kivro_user_code', String(code || ''));
+  try {
+    const raw = await pyodide.runPythonAsync(PYTHON_RUNNER);
+    return normalizeResult(JSON.parse(String(raw || '{}')));
+  } finally {
+    pyodide.globals.delete('__kivro_user_code');
+  }
+}
 
 export function ensurePyodide() {
   if (!pyodideReadyPromise) {
-    pyodideReadyPromise = new Promise(async (resolve, reject) => {
-      try {
-        // charge le script pyodide.js si absent
-        if (!window.loadPyodide) {
-          await new Promise((res, rej) => {
-            const s = document.createElement('script');
-            s.src = '/assets/pyodide/pyodide.js';
-            s.onload = () => res();
-            s.onerror = (e) => rej(new Error('Échec chargement pyodide.js'));
-            document.head.appendChild(s);
-          });
-        }
-
-        // Initialisation du runtime Pyodide (core)
-        const pyodide = await loadPyodide({ indexURL: '/assets/pyodide/' });
-
-        // Charger micropip (inclus dans pyodide-core, local)
-        await pyodide.loadPackage("micropip");
-        const micropip = pyodide.pyimport("micropip");
-
-        // Installer les bibliothèques scientifiques depuis le serveur local
-        await micropip.install("http://127.0.0.1:8000/assets/pyodide/numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl");
-        await micropip.install("http://127.0.0.1:8000/assets/pyodide/scipy-1.14.1-cp313-cp313-pyodide_2025_0_wasm32.whl");
-        await micropip.install("http://127.0.0.1:8000/assets/pyodide/matplotlib-3.8.4-cp313-cp313-pyodide_2025_0_wasm32.whl");
-        await micropip.install("http://127.0.0.1:8000/assets/pyodide/sympy-1.13.3-py3-none-any.whl");
-
-        resolve(pyodide);
-      } catch (err) {
-        reject(err);
+    pyodideReadyPromise = (async () => {
+      if (!window.loadPyodide) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = new URL('pyodide.js', assetsBaseUrl()).href;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Echec du chargement de pyodide.js'));
+          document.head.appendChild(script);
+        });
       }
+
+      const pyodide = await window.loadPyodide({ indexURL: assetsBaseUrl() });
+      await ensurePackages(pyodide);
+      return pyodide;
+    })().catch((error) => {
+      pyodideReadyPromise = null;
+      throw error;
     });
   }
+
   return pyodideReadyPromise;
 }
 
-// Exécute du Python et retourne {stdout, stderr}
-export async function runPython(code) {
-  const pyodide = await ensurePyodide();
-  let stdout = '', stderr = '';
-  const origStdout = pyodide._module.print;
-  const origStderr = pyodide._module.printErr;
-  try {
-    pyodide._module.print = (txt) => { stdout += (txt ?? '') + '\n'; };
-    pyodide._module.printErr = (txt) => { stderr += (txt ?? '') + '\n'; };
-    await pyodide.runPythonAsync(code);
-    return { stdout: stdout.trim(), stderr: stderr.trim() };
-  } finally {
-    pyodide._module.print = origStdout;
-    pyodide._module.printErr = origStderr;
+export function clearPythonExecutionCache() {
+  executionCache.clear();
+}
+
+export async function runPython(code, options = {}) {
+  const source = String(code || '').trim();
+  if (!source) {
+    return {
+      status: 'ok',
+      stdout: '',
+      stderr: '',
+      error: '',
+      images: [],
+    };
   }
+
+  if (options.useCache !== false && executionCache.has(source)) {
+    return executionCache.get(source);
+  }
+
+  const promise = executePython(source).catch((error) => ({
+    status: 'error',
+    stdout: '',
+    stderr: '',
+    error: error?.message || String(error || 'Execution Pyodide impossible'),
+    images: [],
+  }));
+
+  if (options.useCache !== false) executionCache.set(source, promise);
+
+  const result = await promise;
+  if (options.useCache === false) return result;
+  executionCache.set(source, Promise.resolve(result));
+  return result;
 }
