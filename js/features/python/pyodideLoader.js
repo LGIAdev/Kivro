@@ -6,6 +6,9 @@ const REQUIRED_PACKAGES = [
   'sympy',
   'matplotlib',
 ];
+const OPTIONAL_LOCAL_WHEELS = {
+  seaborn: 'seaborn-0.13.2-py3-none-any.whl',
+};
 
 const PYTHON_RUNNER = `
 import base64
@@ -74,6 +77,49 @@ async function ensurePackages(pyodide) {
   pyodide.__kivroPackagesLoaded = true;
 }
 
+function codeImportsPackage(code, packageName) {
+  const source = String(code || '');
+  const pattern = new RegExp(`\\b(?:from\\s+${packageName}\\b|import\\s+${packageName}\\b)`, 'm');
+  return pattern.test(source);
+}
+
+async function ensureOptionalPackage(pyodide, packageName) {
+  const loaded = pyodide.__kivroOptionalPackagesLoaded || (pyodide.__kivroOptionalPackagesLoaded = new Set());
+  if (loaded.has(packageName)) return;
+  await pyodide.loadPackage([packageName]);
+  loaded.add(packageName);
+}
+
+async function installLocalWheel(pyodide, packageName, wheelName) {
+  const loaded = pyodide.__kivroLocalWheelsLoaded || (pyodide.__kivroLocalWheelsLoaded = new Set());
+  if (loaded.has(packageName)) return;
+  pyodide.globals.set('__kivro_wheel_url', new URL(wheelName, assetsBaseUrl()).href);
+  try {
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(__kivro_wheel_url)
+`);
+    loaded.add(packageName);
+  } finally {
+    pyodide.globals.delete('__kivro_wheel_url');
+  }
+}
+
+async function ensurePackagesForCode(pyodide, code) {
+  await ensurePackages(pyodide);
+
+  const needsSeaborn = codeImportsPackage(code, 'seaborn');
+  const needsPandas = needsSeaborn || codeImportsPackage(code, 'pandas');
+
+  if (needsPandas) {
+    await ensureOptionalPackage(pyodide, 'pandas');
+  }
+
+  if (needsSeaborn) {
+    await installLocalWheel(pyodide, 'seaborn', OPTIONAL_LOCAL_WHEELS.seaborn);
+  }
+}
+
 function normalizeResult(payload) {
   const result = payload && typeof payload === 'object' ? payload : {};
   return {
@@ -87,6 +133,7 @@ function normalizeResult(payload) {
 
 async function executePython(code) {
   const pyodide = await ensurePyodide();
+  await ensurePackagesForCode(pyodide, code);
   pyodide.globals.set('__kivro_user_code', String(code || ''));
   try {
     const raw = await pyodide.runPythonAsync(PYTHON_RUNNER);
