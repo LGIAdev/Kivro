@@ -136,6 +136,24 @@ class KivroHandler(SimpleHTTPRequestHandler):
                     self.send_json(message, status=HTTPStatus.CREATED)
                     return
 
+                if method == 'PATCH' and len(parts) == 5 and parts[3] == 'messages':
+                    body = self.read_json_body()
+                    try:
+                        message_id = int(unquote(parts[4]))
+                    except ValueError as exc:
+                        raise ValueError('Message id invalide.') from exc
+                    message = db.update_message(
+                        conversation_id,
+                        message_id,
+                        content=body.get('content'),
+                        truncate_following=bool(body.get('truncate_following')),
+                    )
+                    if message is None:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, 'Message introuvable.')
+                        return
+                    self.send_json(message)
+                    return
+
                 if method == 'POST' and len(parts) == 4 and parts[3] == 'attachments':
                     uploads = self.read_upload_files()
                     attachments = [

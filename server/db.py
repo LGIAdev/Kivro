@@ -431,6 +431,97 @@ def create_attachment(conversation_id: str, filename: str, mime_type: str, paylo
     return item
 
 
+def get_message_with_attachments(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    message_id: int,
+) -> dict | None:
+    row = conn.execute(
+        '''
+        SELECT id, conversation_id, role, content, reasoning_text, model, reasoning_duration_ms, created_at, position
+        FROM messages
+        WHERE id = ? AND conversation_id = ?
+        ''',
+        (message_id, conversation_id),
+    ).fetchone()
+    if row is None:
+        return None
+
+    attachments = conn.execute(
+        '''
+        SELECT
+          id,
+          conversation_id,
+          message_id,
+          filename,
+          mime_type,
+          size_bytes,
+          storage_path,
+          preview_path,
+          status,
+          created_at,
+          sort_order
+        FROM attachments
+        WHERE message_id = ?
+        ORDER BY sort_order ASC, created_at ASC
+        ''',
+        (message_id,),
+    ).fetchall()
+
+    item = dict(row)
+    serialized = []
+    for attachment in attachments:
+        payload = serialize_attachment(attachment)
+        if payload:
+            serialized.append(payload)
+    item['attachments'] = serialized
+    return item
+
+
+def collect_following_message_attachment_paths(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    position: int,
+) -> list[str]:
+    rows = conn.execute(
+        '''
+        SELECT a.storage_path, a.preview_path
+        FROM attachments a
+        INNER JOIN messages m ON m.id = a.message_id
+        WHERE m.conversation_id = ?
+          AND m.position > ?
+        ''',
+        (conversation_id, position),
+    ).fetchall()
+
+    paths: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in ('storage_path', 'preview_path'):
+            value = row[key]
+            if value and value not in seen:
+                seen.add(value)
+                paths.append(str(value))
+    return paths
+
+
+def delete_following_messages(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    position: int,
+) -> list[str]:
+    paths = collect_following_message_attachment_paths(conn, conversation_id, position)
+    conn.execute(
+        '''
+        DELETE FROM messages
+        WHERE conversation_id = ?
+          AND position > ?
+        ''',
+        (conversation_id, position),
+    )
+    return paths
+
+
 def add_message(
     conversation_id: str,
     role: str,
@@ -527,42 +618,55 @@ def add_message(
             'UPDATE conversations SET updated_at = ? WHERE id = ?',
             (ts, conversation_id),
         )
+        return get_message_with_attachments(conn, conversation_id, message_id)
+
+
+def update_message(
+    conversation_id: str,
+    message_id: int,
+    *,
+    content: str | None = None,
+    truncate_following: bool = False,
+) -> dict | None:
+    payload = '' if content is None else str(content).strip()
+    ts = now_ms()
+    deleted_paths: list[str] = []
+
+    with connect() as conn:
         row = conn.execute(
             '''
-            SELECT id, conversation_id, role, content, reasoning_text, model, reasoning_duration_ms, created_at, position
+            SELECT id, role, position
             FROM messages
-            WHERE id = ?
+            WHERE id = ? AND conversation_id = ?
             ''',
-            (message_id,),
+            (message_id, conversation_id),
         ).fetchone()
-        attachments = conn.execute(
-            '''
-            SELECT
-              id,
-              conversation_id,
-              message_id,
-              filename,
-              mime_type,
-              size_bytes,
-              storage_path,
-              preview_path,
-              status,
-              created_at,
-              sort_order
-            FROM attachments
-            WHERE message_id = ?
-            ORDER BY sort_order ASC, created_at ASC
-            ''',
-            (message_id,),
-        ).fetchall()
+        if row is None:
+            return None
+        if str(row['role'] or '').lower() != 'user':
+            raise ValueError('Seuls les messages utilisateur peuvent etre modifies.')
 
-    item = dict(row) if row else None
-    if item is None:
-        return None
-    serialized = []
-    for attachment in attachments:
-        payload = serialize_attachment(attachment)
-        if payload:
-            serialized.append(payload)
-    item['attachments'] = serialized
-    return item
+        attachment_count = int(conn.execute(
+            'SELECT COUNT(*) FROM attachments WHERE message_id = ?',
+            (message_id,),
+        ).fetchone()[0] or 0)
+        if not payload and attachment_count <= 0:
+            raise ValueError('Le message ne peut pas etre vide.')
+
+        conn.execute(
+            '''
+            UPDATE messages
+            SET content = ?
+            WHERE id = ? AND conversation_id = ?
+            ''',
+            (payload, message_id, conversation_id),
+        )
+        if truncate_following:
+            deleted_paths = delete_following_messages(conn, conversation_id, int(row['position'] or 0))
+        conn.execute(
+            'UPDATE conversations SET updated_at = ? WHERE id = ?',
+            (ts, conversation_id),
+        )
+    for path in deleted_paths:
+        delete_file(path)
+    return get_conversation(conversation_id)

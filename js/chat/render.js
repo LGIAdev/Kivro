@@ -86,6 +86,439 @@ async function copyTextToClipboard(text){
   document.body.removeChild(area);
 }
 
+function cloneAttachments(attachments){
+  return Array.isArray(attachments) ? attachments.map((item) => ({ ...item })) : [];
+}
+
+function bubbleMetaToOptions(meta){
+  return {
+    attachments: cloneAttachments(meta?.attachments),
+    reasoningText: meta?.reasoningText ?? null,
+    model: meta?.model ?? null,
+    reasoningDurationMs: meta?.reasoningDurationMs ?? null,
+    messageId: meta?.messageId ?? null,
+    conversationId: meta?.conversationId ?? null,
+    pyodideFinal: meta?.pyodideFinal !== false,
+  };
+}
+
+function canEditMessage(container){
+  const meta = container?.__kivroMessageMeta;
+  return Boolean(
+    meta
+    && meta.role === 'user'
+    && meta.conversationId
+    && meta.messageId != null
+    && typeof window.kivroSaveMessageEdit === 'function'
+  );
+}
+
+function refreshMessageActionState(container){
+  if (!(container instanceof HTMLElement)) return;
+  const body = container.parentElement;
+  if (!(body instanceof HTMLElement)) return;
+
+  const copyButton = body.querySelector('.message-action-button[data-action="copy"]');
+  if (copyButton instanceof HTMLButtonElement) {
+    copyButton.disabled = !String(container.dataset.copyText || '').trim();
+  }
+
+  const editButton = body.querySelector('.message-action-button[data-action="edit"]');
+  if (editButton instanceof HTMLButtonElement) {
+    editButton.disabled = !canEditMessage(container) || body.classList.contains('is-editing');
+  }
+}
+
+function syncBubbleMeta(container, role, text, options = {}){
+  if (!(container instanceof HTMLElement)) return {};
+  const previous = container.__kivroMessageMeta || {};
+  const next = {
+    ...previous,
+    role: String(role || previous.role || '').toLowerCase(),
+    text: String(text ?? previous.text ?? ''),
+    attachments: Object.prototype.hasOwnProperty.call(options, 'attachments')
+      ? cloneAttachments(options.attachments)
+      : cloneAttachments(previous.attachments),
+    reasoningText: Object.prototype.hasOwnProperty.call(options, 'reasoningText')
+      ? (options.reasoningText == null ? null : String(options.reasoningText))
+      : (previous.reasoningText ?? null),
+    model: Object.prototype.hasOwnProperty.call(options, 'model')
+      ? (options.model == null ? null : String(options.model))
+      : (previous.model ?? null),
+    reasoningDurationMs: Object.prototype.hasOwnProperty.call(options, 'reasoningDurationMs')
+      ? (Number(options.reasoningDurationMs || 0) || null)
+      : (previous.reasoningDurationMs ?? null),
+    messageId: Object.prototype.hasOwnProperty.call(options, 'messageId')
+      ? (options.messageId ?? null)
+      : (previous.messageId ?? null),
+    conversationId: Object.prototype.hasOwnProperty.call(options, 'conversationId')
+      ? (options.conversationId ? String(options.conversationId) : null)
+      : (previous.conversationId ?? null),
+    pyodideFinal: Object.prototype.hasOwnProperty.call(options, 'pyodideFinal')
+      ? options.pyodideFinal !== false
+      : (previous.pyodideFinal !== false),
+  };
+
+  container.__kivroMessageMeta = next;
+  container.dataset.role = next.role || '';
+  if (next.messageId != null) {
+    container.dataset.messageId = String(next.messageId);
+  } else {
+    delete container.dataset.messageId;
+  }
+  if (next.conversationId) {
+    container.dataset.conversationId = next.conversationId;
+  } else {
+    delete container.dataset.conversationId;
+  }
+  refreshMessageActionState(container);
+  return next;
+}
+
+function messageActionIcon(kind){
+  if (kind === 'copy') {
+    return ''
+      + '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+      + '<rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.7"/>'
+      + '<path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+      + '</svg>';
+  }
+  return ''
+    + '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    + '<path d="M4 15.5 15.2 4.3a2.1 2.1 0 0 1 3 0l1.5 1.5a2.1 2.1 0 0 1 0 3L8.5 20H4v-4.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'
+    + '<path d="m13.8 5.7 4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '</svg>';
+}
+
+function flashActionLabel(button, nextLabel){
+  if (!(button instanceof HTMLElement)) return;
+  const original = button.dataset.originalLabel || button.dataset.label || '';
+  if (!button.dataset.originalLabel) button.dataset.originalLabel = original;
+  button.dataset.label = nextLabel;
+  window.clearTimeout(button.__kivroLabelTimer);
+  button.__kivroLabelTimer = window.setTimeout(() => {
+    button.dataset.label = button.dataset.originalLabel || original;
+  }, 1200);
+}
+
+let copyToastState = null;
+
+function ensureCopyToast(){
+  if (copyToastState?.element?.isConnected) return copyToastState;
+
+  const element = document.createElement('div');
+  element.className = 'copy-toast';
+  element.setAttribute('role', 'status');
+  element.setAttribute('aria-live', 'polite');
+  element.hidden = true;
+  document.body.appendChild(element);
+
+  copyToastState = {
+    element,
+    hideTimer: null,
+    cleanupTimer: null,
+  };
+  return copyToastState;
+}
+
+function showCopyToast(message){
+  const state = ensureCopyToast();
+  const label = String(message || '').trim();
+  if (!label) return;
+
+  window.clearTimeout(state.hideTimer);
+  window.clearTimeout(state.cleanupTimer);
+  state.element.textContent = label;
+  state.element.hidden = false;
+  state.element.classList.remove('is-visible');
+
+  window.requestAnimationFrame(() => {
+    state.element.classList.add('is-visible');
+  });
+
+  state.hideTimer = window.setTimeout(() => {
+    state.element.classList.remove('is-visible');
+    state.cleanupTimer = window.setTimeout(() => {
+      state.element.hidden = true;
+    }, 220);
+  }, 1500);
+}
+
+let activeMessageEditor = null;
+
+function finishMessageEditing(bubble){
+  if (!(bubble instanceof HTMLElement)) return;
+  const body = bubble.parentElement;
+  if (body instanceof HTMLElement) body.classList.remove('is-editing');
+  delete bubble.dataset.editing;
+  if (activeMessageEditor?.bubble === bubble) {
+    activeMessageEditor = null;
+  }
+  refreshMessageActionState(bubble);
+}
+
+function restoreMessageBubble(bubble){
+  if (!(bubble instanceof HTMLElement)) return;
+  const meta = bubble.__kivroMessageMeta || {};
+  finishMessageEditing(bubble);
+  updateBubbleContent(bubble, meta.role || 'user', meta.text || '', bubbleMetaToOptions(meta));
+}
+
+function cancelActiveMessageEdit(){
+  if (!activeMessageEditor?.bubble) return;
+  restoreMessageBubble(activeMessageEditor.bubble);
+}
+
+function createMessageEditor(initialText){
+  const shell = document.createElement('div');
+  shell.className = 'message-edit-shell';
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'message-edit-textarea';
+  textarea.value = String(initialText || '');
+  textarea.rows = Math.max(3, textarea.value.split(/\r?\n/).length || 1);
+  textarea.setAttribute('aria-label', 'Modifier le message');
+
+  const footer = document.createElement('div');
+  footer.className = 'message-edit-footer';
+
+  const status = document.createElement('div');
+  status.className = 'message-edit-status';
+  status.setAttribute('aria-live', 'polite');
+
+  const actions = document.createElement('div');
+  actions.className = 'message-edit-actions';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'message-edit-button';
+  cancelButton.textContent = 'Annuler';
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'message-edit-button is-primary';
+  saveButton.textContent = 'Enregistrer';
+
+  actions.append(cancelButton, saveButton);
+  footer.append(status, actions);
+  shell.append(textarea, footer);
+
+  return { shell, textarea, status, cancelButton, saveButton };
+}
+
+async function handleMessageEditSave(bubble, editor){
+  if (!(bubble instanceof HTMLElement) || !editor) return;
+  const meta = bubble.__kivroMessageMeta || {};
+  const nextText = String(editor.textarea.value || '').trim();
+  const hasAttachments = Array.isArray(meta.attachments) && meta.attachments.length > 0;
+  if (!nextText && !hasAttachments) {
+    editor.status.textContent = 'Le message ne peut pas etre vide.';
+    editor.textarea.focus();
+    return;
+  }
+
+  if (nextText === String(meta.text || '').trim()) {
+    restoreMessageBubble(bubble);
+    return;
+  }
+
+  if (typeof window.kivroSaveMessageEdit !== 'function') {
+    editor.status.textContent = 'Modification indisponible.';
+    return;
+  }
+
+  editor.saveButton.disabled = true;
+  editor.cancelButton.disabled = true;
+  editor.textarea.disabled = true;
+  editor.status.textContent = 'Regeneration...';
+
+  try {
+    await window.kivroSaveMessageEdit({
+      conversationId: meta.conversationId,
+      messageId: meta.messageId,
+      content: nextText,
+    });
+    if (activeMessageEditor?.bubble === bubble) {
+      activeMessageEditor = null;
+    }
+  } catch (error) {
+    editor.status.textContent = error?.message || 'Modification impossible.';
+    editor.saveButton.disabled = false;
+    editor.cancelButton.disabled = false;
+    editor.textarea.disabled = false;
+    editor.textarea.focus();
+  }
+}
+
+function beginMessageEdit(bubble){
+  if (!(bubble instanceof HTMLElement) || !canEditMessage(bubble)) return;
+  if (activeMessageEditor?.bubble === bubble) return;
+  cancelActiveMessageEdit();
+
+  const meta = bubble.__kivroMessageMeta || {};
+  const body = bubble.parentElement;
+  if (!(body instanceof HTMLElement)) return;
+
+  const editor = createMessageEditor(meta.text || '');
+  body.classList.add('is-editing');
+  bubble.dataset.editing = 'true';
+  bubble.innerHTML = '';
+  bubble.appendChild(editor.shell);
+  appendMessageAttachments(bubble, meta.attachments || []);
+
+  const cancel = () => restoreMessageBubble(bubble);
+  const save = () => handleMessageEditSave(bubble, editor);
+
+  editor.cancelButton.addEventListener('click', cancel);
+  editor.saveButton.addEventListener('click', save);
+  editor.textarea.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancel();
+      return;
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      save();
+    }
+  });
+
+  activeMessageEditor = { bubble };
+  editor.textarea.focus();
+  const length = editor.textarea.value.length;
+  editor.textarea.setSelectionRange(length, length);
+}
+
+function createMessageActionButton(action, label, bubble){
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `message-action-button is-${action}`;
+  button.dataset.action = action;
+  button.dataset.label = label;
+  button.dataset.originalLabel = label;
+  button.setAttribute('aria-label', label);
+  button.innerHTML = messageActionIcon(action);
+
+  if (action === 'copy') {
+    button.addEventListener('click', async () => {
+      const copyText = String(bubble?.dataset.copyText || '').trim();
+      if (!copyText) return;
+      try {
+        await copyTextToClipboard(copyText);
+        flashActionLabel(button, 'Copie');
+        const role = String(bubble?.dataset.role || bubble?.__kivroMessageMeta?.role || '').toLowerCase();
+        showCopyToast(
+          role === 'assistant'
+            ? 'La r\u00E9ponse a \u00E9t\u00E9 copi\u00E9e'
+            : 'Le message a \u00E9t\u00E9 copi\u00E9'
+        );
+      } catch (_) {
+        flashActionLabel(button, 'Echec');
+      }
+    });
+  } else if (action === 'edit') {
+    button.addEventListener('click', () => {
+      beginMessageEdit(bubble);
+    });
+  }
+
+  return button;
+}
+
+function createMessageActions(role, bubble){
+  if (!(bubble instanceof HTMLElement)) return null;
+  if (role !== 'user' && role !== 'assistant') return null;
+
+  const actions = document.createElement('div');
+  actions.className = `message-actions ${role === 'assistant' ? 'is-persistent' : 'is-hover'}`;
+
+  if (role === 'user') {
+    actions.append(
+      createMessageActionButton('edit', 'Modifier', bubble),
+      createMessageActionButton('copy', 'Copier', bubble),
+    );
+  } else {
+    actions.append(createMessageActionButton('copy', 'Copier', bubble));
+  }
+
+  refreshMessageActionState(bubble);
+  return actions;
+}
+
+let imageViewerState = null;
+
+function closeImageViewer(){
+  const state = imageViewerState;
+  if (!state?.overlay) return;
+  state.overlay.hidden = true;
+  state.image.removeAttribute('src');
+  document.body.classList.remove('kivro-image-viewer-open');
+  if (state.activeTrigger instanceof HTMLElement) {
+    state.activeTrigger.focus();
+  }
+  state.activeTrigger = null;
+}
+
+function ensureImageViewer(){
+  if (imageViewerState?.overlay?.isConnected) return imageViewerState;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'image-viewer-overlay';
+  overlay.hidden = true;
+
+  const frame = document.createElement('div');
+  frame.className = 'image-viewer-frame';
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'image-viewer-close';
+  closeButton.setAttribute('aria-label', 'Fermer l image');
+  closeButton.innerHTML = ''
+    + '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    + '<path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '</svg>';
+
+  const image = document.createElement('img');
+  image.className = 'image-viewer-image';
+  image.alt = 'Graphique agrandi';
+
+  closeButton.addEventListener('click', closeImageViewer);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeImageViewer();
+  });
+
+  frame.append(closeButton, image);
+  overlay.appendChild(frame);
+  document.body.appendChild(overlay);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !overlay.hidden) {
+      event.preventDefault();
+      closeImageViewer();
+    }
+  });
+
+  imageViewerState = {
+    overlay,
+    frame,
+    image,
+    closeButton,
+    activeTrigger: null,
+  };
+  return imageViewerState;
+}
+
+function openImageViewer(src, alt, trigger){
+  if (!String(src || '').trim()) return;
+  const state = ensureImageViewer();
+  state.image.src = String(src || '');
+  state.image.alt = String(alt || 'Graphique agrandi');
+  state.activeTrigger = trigger instanceof HTMLElement ? trigger : null;
+  state.overlay.hidden = false;
+  document.body.classList.add('kivro-image-viewer-open');
+  state.closeButton.focus();
+}
+
 // LaTeX array/tabular → Markdown GFM (texte)
 function latexArrayToGfm(s){
   if(!s) return '';
@@ -439,9 +872,19 @@ function renderPyodideResult(resultCard, result){
     for (const image of images) {
       const figure = document.createElement('figure');
       figure.className = 'pyodide-image-frame';
+      figure.tabIndex = 0;
+      figure.setAttribute('role', 'button');
+      figure.setAttribute('aria-label', 'Ouvrir le graphique en grand');
       const img = document.createElement('img');
       img.src = image.dataUrl || '';
       img.alt = 'Sortie matplotlib';
+      figure.addEventListener('click', () => openImageViewer(img.src, img.alt, figure));
+      figure.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openImageViewer(img.src, img.alt, figure);
+        }
+      });
       figure.appendChild(img);
       gallery.appendChild(figure);
     }
@@ -563,11 +1006,13 @@ export function updateBubbleContent(container, role, text, options = {}){
   if (!(container instanceof HTMLElement)) return;
 
   const preservedExpanded = container.dataset.reasoningExpanded === 'true';
+  const meta = syncBubbleMeta(container, role, text, options);
   container.innerHTML = '';
   delete container.dataset.reasoningExpanded;
 
   if (role === 'assistant') {
     const payload = resolveAssistantDisplayPayload(text, options);
+    container.dataset.copyText = payload.answerText || '';
     if (payload.hasReasoning) {
       const group = document.createElement('div');
       group.className = 'assistant-response';
@@ -616,6 +1061,7 @@ export function updateBubbleContent(container, role, text, options = {}){
       container.appendChild(group);
       appendMessageAttachments(container, options.attachments || []);
       renderMathBlocks(container);
+      refreshMessageActionState(container);
       return;
     }
 
@@ -623,16 +1069,19 @@ export function updateBubbleContent(container, role, text, options = {}){
       if (options.pyodideFinal !== false) hydratePyodideBlocks(container);
       appendMessageAttachments(container, options.attachments || []);
       renderMathBlocks(container);
+      refreshMessageActionState(container);
       return;
     }
   }
 
   const hasText = !!String(text || '').trim();
+  container.dataset.copyText = String(text || '');
   if (hasText) {
     container.innerHTML = renderMarkdown(text);
   }
-  appendMessageAttachments(container, options.attachments || []);
+  appendMessageAttachments(container, meta.attachments || []);
   renderMathBlocks(container);
+  refreshMessageActionState(container);
 }
 
 /* -----------------------------------------------------------
@@ -737,18 +1186,42 @@ export function renderMsg(role, text, options = {}){
   b.className = 'bubble';
 
   updateBubbleContent(b, role, text, options);
+  const body = document.createElement('div');
+  body.className = 'message-body';
+  body.appendChild(b);
 
-  row.append(r, b);
+  const actions = createMessageActions(role, b);
+  if (actions) body.appendChild(actions);
+
+  row.append(r, body);
   log.appendChild(row);
   row.scrollIntoView({ block: 'end' });
 
   return b;
 }
 
+export function bindMessageRecord(bubble, record){
+  if (!(bubble instanceof HTMLElement) || !record) return;
+  syncBubbleMeta(
+    bubble,
+    record.role || bubble.dataset.role || 'user',
+    record.content ?? bubble.__kivroMessageMeta?.text ?? '',
+    {
+      attachments: record.attachments,
+      reasoningText: record.reasoningText ?? record.reasoning_text ?? null,
+      model: record.model ?? null,
+      reasoningDurationMs: record.reasoningDurationMs ?? record.reasoning_duration_ms ?? null,
+      messageId: record.id ?? record.messageId ?? record.message_id ?? null,
+      conversationId: record.conversationId ?? record.conversation_id ?? null,
+    },
+  );
+}
+
 /* -----------------------------------------------------------
  * 5) Outils
  * ----------------------------------------------------------- */
 export function clearChat(){
+  cancelActiveMessageEdit();
   const log = qs('#chat-log');
   if (log) log.innerHTML = '';
   try{ window.kivroClearPendingUploads?.(); }catch(_){ }

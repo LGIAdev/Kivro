@@ -1,7 +1,7 @@
 ﻿// js/net/ollama.js
 // Flux reseau Ollama + rendu des messages (compatible KaTeX)
 
-import { renderMsg, updateBubbleContent } from '../chat/render.js';
+import { bindMessageRecord, renderMsg, updateBubbleContent } from '../chat/render.js';
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
 import { canModelReadFiles } from '../config/file-capable-models.js';
@@ -433,6 +433,22 @@ function renderAssistantChunk(target, payload, options = {}) {
   });
 }
 
+function renderConversationSnapshot(conversation) {
+  const log = qs('#chat-log');
+  if (log) log.innerHTML = '';
+
+  for (const message of (conversation?.messages || [])) {
+    renderMsg(message.role, message.content, {
+      messageId: message.id,
+      conversationId: message.conversationId,
+      attachments: message.attachments || [],
+      reasoningText: message.reasoningText,
+      model: message.model,
+      reasoningDurationMs: message.reasoningDurationMs,
+    });
+  }
+}
+
 function hasPendingImageUploads(items = []) {
   return items.some((item) => item?.kind === 'image');
 }
@@ -452,6 +468,96 @@ function setSendButtonBusy(isBusy) {
   btn.classList.toggle('is-busy', isBusy);
   btn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
   btn.title = isBusy ? 'Traitement en cours...' : '';
+}
+
+export async function regenerateFromEditedMessage({ conversationId, messageId, content }) {
+  if (!conversationId || messageId == null) {
+    throw new Error('Message introuvable.');
+  }
+  if (isSendInFlight) {
+    throw new Error('Un traitement est deja en cours.');
+  }
+
+  isSendInFlight = true;
+  setSendButtonBusy(true);
+
+  let aiB = null;
+  try {
+    const rewrittenConversation = await Store.rewriteFromMessage(conversationId, messageId, {
+      content,
+      truncate_following: true,
+    });
+    const conversation = await Store.fetch(conversationId).catch(() => rewrittenConversation);
+    renderConversationSnapshot(conversation);
+    try { await mountHistory(); } catch (_) {}
+
+    const messages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+    const lastMessage = messages[messages.length - 1] || null;
+    if (!lastMessage || lastMessage.role !== 'user' || !String(lastMessage.content || '').trim()) {
+      return conversation;
+    }
+
+    const model = readModel();
+    const base = readBase();
+    let sys = '';
+    try {
+      await loadSystemPrompt();
+      sys = readSys();
+    } catch (err) {
+      aiB = renderMsg('assistant', `Erreur: ${err?.message || err}`, { model, pyodideFinal: true });
+      const savedError = await Store.addMsg(conversationId, 'assistant', `Erreur: ${err?.message || err}`, { model });
+      bindMessageRecord(aiB, savedError);
+      try { await mountHistory(); } catch (_) {}
+      return Store.get(conversationId) || conversation;
+    }
+
+    aiB = renderMsg('assistant', '', { model });
+    const assistantState = createAssistantStreamState();
+
+    try {
+      for await (const chunk of streamChat({
+        base,
+        model,
+        sys,
+        prompt: lastMessage.content,
+        convId: conversationId,
+        images: [],
+      })) {
+        mergeAssistantStreamChunk(assistantState, chunk);
+        const livePayload = buildAssistantPayload(assistantState, { live: true });
+        if (!livePayload.answerText.trim() && !livePayload.reasoningText.trim()) continue;
+        renderAssistantChunk(aiB, livePayload, {
+          model,
+          pyodideFinal: false,
+        });
+      }
+
+      const finalPayload = finalizeAssistantStreamState(assistantState);
+      if (finalPayload.answerText.trim() || finalPayload.reasoningText.trim()) {
+        renderAssistantChunk(aiB, finalPayload, { model, pyodideFinal: true });
+      }
+      if (finalPayload.answerText.trim() || finalPayload.reasoningText.trim()) {
+        const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', finalPayload.answerText, {
+          reasoningText: finalPayload.reasoningText,
+          model,
+          reasoningDurationMs: finalPayload.reasoningDurationMs,
+        });
+        bindMessageRecord(aiB, savedAssistantMessage);
+      }
+      try { await mountHistory(); } catch (_) {}
+      return Store.get(conversationId) || conversation;
+    } catch (err) {
+      const msg = 'Erreur: ' + (err && err.message ? err.message : String(err));
+      renderAssistantChunk(aiB, { answerText: msg, reasoningText: '', reasoningDurationMs: null }, { model, pyodideFinal: true });
+      const savedError = await Store.addMsg(conversationId, 'assistant', msg, { model });
+      bindMessageRecord(aiB, savedError);
+      try { await mountHistory(); } catch (_) {}
+      return Store.get(conversationId) || conversation;
+    }
+  } finally {
+    isSendInFlight = false;
+    setSendButtonBusy(false);
+  }
 }
 
 export async function sendCurrent() {
@@ -489,7 +595,7 @@ export async function sendCurrent() {
   setSendButtonBusy(true);
 
   try {
-    renderMsg('user', text, { attachments: localAttachments });
+    const userBubble = renderMsg('user', text, { attachments: localAttachments });
     ta.value = '';
 
     if (window.kivroEnsureConversationPromise) {
@@ -559,9 +665,10 @@ export async function sendCurrent() {
     }
 
     try {
-      await Store.addMsg(convId, 'user', text, {
+      const savedUserMessage = await Store.addMsg(convId, 'user', text, {
         attachmentIds: uploadedAttachments.map((item) => item.id),
       });
+      bindMessageRecord(userBubble, savedUserMessage);
     } catch (_) {
     }
 
@@ -614,11 +721,12 @@ export async function sendCurrent() {
         renderAssistantChunk(aiB, finalPayload, { model, pyodideFinal: true });
       }
       if (convId && (finalPayload.answerText.trim() || finalPayload.reasoningText.trim())) {
-        await Store.addMsg(convId, 'assistant', finalPayload.answerText, {
+        const savedAssistantMessage = await Store.addMsg(convId, 'assistant', finalPayload.answerText, {
           reasoningText: finalPayload.reasoningText,
           model,
           reasoningDurationMs: finalPayload.reasoningDurationMs,
         });
+        bindMessageRecord(aiB, savedAssistantMessage);
       }
       try { await mountHistory(); } catch (_) {}
     } catch (err) {

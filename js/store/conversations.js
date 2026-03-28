@@ -7,6 +7,7 @@ import {
   getConversation,
   listConversations,
   updateConversation,
+  updateConversationMessage,
 } from '../net/conversationsApi.js';
 
 const K_CUR = 'mpai.current.v1';
@@ -82,19 +83,23 @@ function upsertConversation(raw) {
       messages: normalized.messagesLoaded ? normalized.messages : (existing.messages || []),
       messagesLoaded: normalized.messagesLoaded || existing.messagesLoaded,
     };
-    merged.messageCount = Math.max(
-      Number(merged.messageCount || 0),
-      Array.isArray(merged.messages) ? merged.messages.length : 0,
-    );
+    merged.messageCount = normalized.messagesLoaded
+      ? (Array.isArray(merged.messages) ? merged.messages.length : 0)
+      : Math.max(
+        Number(merged.messageCount || 0),
+        Array.isArray(merged.messages) ? merged.messages.length : 0,
+      );
     cache[idx] = merged;
     sortCache();
     return merged;
   }
 
-  normalized.messageCount = Math.max(
-    Number(normalized.messageCount || 0),
-    Array.isArray(normalized.messages) ? normalized.messages.length : 0,
-  );
+  normalized.messageCount = normalized.messagesLoaded
+    ? normalized.messages.length
+    : Math.max(
+      Number(normalized.messageCount || 0),
+      Array.isArray(normalized.messages) ? normalized.messages.length : 0,
+    );
   cache.push(normalized);
   sortCache();
   return normalized;
@@ -108,12 +113,38 @@ function replaceCacheFromList(list) {
     if (existing?.messagesLoaded) {
       normalized.messages = existing.messages;
       normalized.messagesLoaded = true;
-      normalized.messageCount = Math.max(normalized.messageCount, existing.messages.length);
+      normalized.messageCount = existing.messages.length;
     }
     return normalized;
   });
   sortCache();
   return cache;
+}
+
+function upsertConversationPayload(payload) {
+  return upsertConversation({
+    ...(payload?.conversation || {}),
+    messages: payload?.messages || [],
+    message_count: Array.isArray(payload?.messages) ? payload.messages.length : 0,
+  });
+}
+
+function upsertMessageInConversation(conversation, message) {
+  if (!conversation || !message) return null;
+  if (!Array.isArray(conversation.messages)) conversation.messages = [];
+  const index = conversation.messages.findIndex((item) => item.id === message.id);
+  if (index >= 0) {
+    conversation.messages[index] = {
+      ...conversation.messages[index],
+      ...message,
+      attachments: Array.isArray(message.attachments) ? message.attachments : (conversation.messages[index].attachments || []),
+    };
+  } else {
+    conversation.messages.push(message);
+  }
+  conversation.messagesLoaded = true;
+  conversation.messageCount = conversation.messages.length;
+  return conversation;
 }
 
 function closeActiveMenu() {
@@ -166,6 +197,8 @@ async function openConversation(id) {
   clearChat();
   for (const message of (fullConversation?.messages || [])) {
     renderMsg(message.role, message.content, {
+      messageId: message.id,
+      conversationId: message.conversationId,
       attachments: message.attachments || [],
       reasoningText: message.reasoningText,
       model: message.model,
@@ -251,15 +284,15 @@ export const Store = {
     }
     if (!conversation) return null;
 
-    if (!Array.isArray(conversation.messages)) conversation.messages = [];
-    if (!conversation.messages.find((item) => item.id === message.id)) {
-      conversation.messages.push(message);
-    }
-    conversation.messagesLoaded = true;
+    upsertMessageInConversation(conversation, message);
     conversation.updatedAt = message.createdAt;
-    conversation.messageCount = Math.max(Number(conversation.messageCount || 0), conversation.messages.length);
     upsertConversation(conversation);
     return message;
+  },
+
+  async rewriteFromMessage(conversationId, messageId, payload) {
+    const response = await updateConversationMessage(conversationId, messageId, payload || {});
+    return upsertConversationPayload(response);
   },
 
   async renameIfDefault(id, title) {

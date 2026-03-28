@@ -5,6 +5,7 @@ import { wireUserMenu, wirePromptModal, wireSettingsModal } from './ui/menus.js'
 import { wireSendAction, mountStatusPill } from './ui/actions.js';
 import { wireLogout } from './auth/logout.js';
 import { wireUploads } from './features/uploads.js';
+import { regenerateFromEditedMessage } from './net/ollama.js';
 import('./features/math/katex-init.js')
   .then(({ initKatex }) => {
     initKatex();
@@ -30,6 +31,13 @@ const SIDEBAR_RESIZE_MAX_CM = 5;
 const CSS_CM_TO_PX = 96 / 2.54;
 
 function $(sel) { return document.querySelector(sel); }
+
+window.kivroSaveMessageEdit = async ({ conversationId, messageId, content }) => {
+  if (!conversationId || messageId == null) {
+    throw new Error('Message introuvable.');
+  }
+  return regenerateFromEditedMessage({ conversationId, messageId, content });
+};
 
 function hasCurrentConversation() {
   try {

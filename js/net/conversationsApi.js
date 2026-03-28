@@ -81,6 +81,13 @@ export function addConversationMessage(id, payload) {
   });
 }
 
+export function updateConversationMessage(id, messageId, payload) {
+  return request(`/api/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    body: payload || {},
+  });
+}
+
 export async function uploadConversationAttachments(id, files) {
   const form = new FormData();
   for (const file of (files || [])) {
