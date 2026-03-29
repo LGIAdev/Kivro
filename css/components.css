@@ -152,9 +152,12 @@
 .message-edit-shell{
   display:grid;
   gap:12px;
+  width:fit-content;
+  max-width:100%;
 }
 .message-edit-textarea{
   width:100%;
+  min-width:0;
   min-height:120px;
   padding:12px 14px;
   border:1px solid var(--border);

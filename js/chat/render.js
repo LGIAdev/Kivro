@@ -244,6 +244,125 @@ function showCopyToast(message){
   }, 1500);
 }
 
+const MESSAGE_EDIT_MIN_WIDTH = 320;
+let messageEditMeasureNode = null;
+
+function ensureMessageEditMeasureNode(){
+  if (messageEditMeasureNode?.isConnected) return messageEditMeasureNode;
+  const node = document.createElement('div');
+  node.setAttribute('aria-hidden', 'true');
+  node.style.position = 'fixed';
+  node.style.left = '-9999px';
+  node.style.top = '-9999px';
+  node.style.visibility = 'hidden';
+  node.style.pointerEvents = 'none';
+  node.style.whiteSpace = 'pre';
+  node.style.wordBreak = 'normal';
+  node.style.overflowWrap = 'normal';
+  document.body.appendChild(node);
+  messageEditMeasureNode = node;
+  return node;
+}
+
+function measureMessageEditLineWidth(textarea){
+  if (!(textarea instanceof HTMLTextAreaElement)) return 0;
+
+  const styles = window.getComputedStyle(textarea);
+  const node = ensureMessageEditMeasureNode();
+  const lines = String(textarea.value || '').split(/\r?\n/);
+  const longestLine = lines.reduce((longest, line) => (
+    line.length > longest.length ? line : longest
+  ), '') || ' ';
+
+  node.style.font = styles.font;
+  node.style.fontKerning = styles.fontKerning;
+  node.style.fontStretch = styles.fontStretch;
+  node.style.fontVariant = styles.fontVariant;
+  node.style.letterSpacing = styles.letterSpacing;
+  node.style.textTransform = styles.textTransform;
+  node.textContent = longestLine.replace(/ /g, '\u00A0');
+
+  return Math.ceil(node.getBoundingClientRect().width);
+}
+
+function syncMessageEditorWidth(bubble, editor){
+  if (!(bubble instanceof HTMLElement) || !editor?.shell || !editor.textarea) return;
+
+  const body = bubble.parentElement;
+  const availableWidth = Math.floor(
+    Number(editor.maxWidth)
+      || body?.getBoundingClientRect?.().width
+      || bubble.getBoundingClientRect().width
+      || 0
+  );
+  if (!availableWidth) return;
+
+  const styles = window.getComputedStyle(editor.textarea);
+  const horizontalInsets = [
+    styles.paddingLeft,
+    styles.paddingRight,
+    styles.borderLeftWidth,
+    styles.borderRightWidth,
+  ].reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
+  const contentWidth = measureMessageEditLineWidth(editor.textarea);
+  const actionWidth = editor.actions instanceof HTMLElement ? editor.actions.scrollWidth : 0;
+  const targetWidth = Math.min(
+    availableWidth,
+    Math.max(
+      Math.min(MESSAGE_EDIT_MIN_WIDTH, availableWidth),
+      contentWidth + horizontalInsets + 24,
+      actionWidth + 32,
+    ),
+  );
+
+  editor.shell.style.width = `${Math.ceil(targetWidth)}px`;
+}
+
+function bindMessageEditorAutoWidth(bubble, editor, initialMaxWidth = 0){
+  if (!(bubble instanceof HTMLElement) || !editor?.textarea || !editor?.shell) {
+    return () => {};
+  }
+
+  const body = bubble.parentElement;
+  const row = body?.parentElement;
+  const bubbleWidth = Math.ceil(initialMaxWidth || bubble.getBoundingClientRect().width || 0);
+  editor.initialMaxWidth = bubbleWidth;
+  editor.maxWidth = bubbleWidth;
+
+  const sync = () => syncMessageEditorWidth(bubble, editor);
+  const handleWindowResize = () => {
+    const rowWidth = Math.ceil(row?.getBoundingClientRect?.().width || editor.initialMaxWidth || 0);
+    const nextAvailableWidth = Math.min(editor.initialMaxWidth || rowWidth, rowWidth || editor.initialMaxWidth || 0);
+    if (nextAvailableWidth > 0) {
+      editor.maxWidth = nextAvailableWidth;
+    }
+    sync();
+  };
+
+  let resizeObserver = null;
+  if (typeof window.ResizeObserver === 'function' && row instanceof HTMLElement) {
+    resizeObserver = new window.ResizeObserver(() => {
+      const rowWidth = Math.ceil(row.getBoundingClientRect().width || editor.initialMaxWidth || 0);
+      const nextAvailableWidth = Math.min(editor.initialMaxWidth || rowWidth, rowWidth || editor.initialMaxWidth || 0);
+      if (nextAvailableWidth > 0) {
+        editor.maxWidth = nextAvailableWidth;
+      }
+      sync();
+    });
+    resizeObserver.observe(row);
+  }
+
+  editor.textarea.addEventListener('input', sync);
+  window.addEventListener('resize', handleWindowResize);
+  window.requestAnimationFrame(sync);
+
+  return () => {
+    editor.textarea.removeEventListener('input', sync);
+    window.removeEventListener('resize', handleWindowResize);
+    resizeObserver?.disconnect();
+  };
+}
+
 let activeMessageEditor = null;
 
 function finishMessageEditing(bubble){
@@ -252,6 +371,7 @@ function finishMessageEditing(bubble){
   if (body instanceof HTMLElement) body.classList.remove('is-editing');
   delete bubble.dataset.editing;
   if (activeMessageEditor?.bubble === bubble) {
+    try { activeMessageEditor.cleanupAutoWidth?.(); } catch (_) {}
     activeMessageEditor = null;
   }
   refreshMessageActionState(bubble);
@@ -339,6 +459,7 @@ async function handleMessageEditSave(bubble, editor){
       content: nextText,
     });
     if (activeMessageEditor?.bubble === bubble) {
+      try { activeMessageEditor.cleanupAutoWidth?.(); } catch (_) {}
       activeMessageEditor = null;
     }
   } catch (error) {
@@ -358,6 +479,7 @@ function beginMessageEdit(bubble){
   const meta = bubble.__kivroMessageMeta || {};
   const body = bubble.parentElement;
   if (!(body instanceof HTMLElement)) return;
+  const maxEditorWidth = Math.ceil(body.getBoundingClientRect().width || bubble.getBoundingClientRect().width || 0);
 
   const editor = createMessageEditor(meta.text || '');
   body.classList.add('is-editing');
@@ -383,7 +505,8 @@ function beginMessageEdit(bubble){
     }
   });
 
-  activeMessageEditor = { bubble };
+  const cleanupAutoWidth = bindMessageEditorAutoWidth(bubble, editor, maxEditorWidth);
+  activeMessageEditor = { bubble, cleanupAutoWidth };
   editor.textarea.focus();
   const length = editor.textarea.value.length;
   editor.textarea.setSelectionRange(length, length);
