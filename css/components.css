@@ -526,9 +526,10 @@
 
 /* Table principale (ne dépasse pas la bulle, peut déclencher un scroll) */
 .msg .bubble table{
-  width:max-content;  /* tableau élargi selon son contenu */
-  table-layout:auto;            /* colonnes souples (meilleur wrap du texte) */
+  width:max-content;  /* laisse le tableau s'élargir si le nombre de colonnes l'impose */
+  table-layout:fixed;           /* colonnes stables pour un retour à la ligne lisible */
   min-width:100%;  /* au moins la largeur de la bulle */
+  max-width:none;
 
   /* Styles existants conservés */
   border-collapse:separate;     /* coins arrondis fiables */
@@ -556,7 +557,8 @@
 /* Corps */
 .msg .bubble tbody td{
   padding:10px 14px;
-  text-align:center;
+  text-align:left;
+  vertical-align:top;
   background:transparent;
   color:var(--text);
   border-right:1px solid var(--border);
@@ -591,10 +593,12 @@
 /* ✅ Texte multi-lignes dans toutes les cellules (sans casser KaTeX) */
 .msg .bubble table th,
 .msg .bubble table td{
+  width:clamp(10.5rem, 12vw, 12rem); /* colonne lisible, mais encore scrollable si le tableau est large */
+  min-width:clamp(10.5rem, 12vw, 12rem);
   white-space:normal;        /* autorise plusieurs lignes */
-  word-break:break-word;     /* casse mots très longs */
-  overflow-wrap:anywhere;    /* casse même sans espaces */
-  hyphens:auto;
+  word-break:normal;         /* privilegie les retours sur les espaces */
+  overflow-wrap:break-word;  /* casse seulement en dernier recours */
+  hyphens:none;
 }
 /* Conserver le nowrap uniquement pour les formules KaTeX (rendu stable) */
 .msg .bubble .katex .base,
