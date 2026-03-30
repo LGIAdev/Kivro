@@ -32,7 +32,7 @@ try:
         pass
 
     with redirect_stdout(stdout_io), redirect_stderr(stderr_io):
-        exec(__kivro_user_code, namespace, namespace)
+        exec(__kivrio_user_code, namespace, namespace)
 
     try:
         import matplotlib.pyplot as plt
@@ -72,9 +72,9 @@ function assetsBaseUrl() {
 }
 
 async function ensurePackages(pyodide) {
-  if (pyodide.__kivroPackagesLoaded) return;
+  if (pyodide.__kivrioPackagesLoaded) return;
   await pyodide.loadPackage(REQUIRED_PACKAGES);
-  pyodide.__kivroPackagesLoaded = true;
+  pyodide.__kivrioPackagesLoaded = true;
 }
 
 function codeImportsPackage(code, packageName) {
@@ -84,24 +84,24 @@ function codeImportsPackage(code, packageName) {
 }
 
 async function ensureOptionalPackage(pyodide, packageName) {
-  const loaded = pyodide.__kivroOptionalPackagesLoaded || (pyodide.__kivroOptionalPackagesLoaded = new Set());
+  const loaded = pyodide.__kivrioOptionalPackagesLoaded || (pyodide.__kivrioOptionalPackagesLoaded = new Set());
   if (loaded.has(packageName)) return;
   await pyodide.loadPackage([packageName]);
   loaded.add(packageName);
 }
 
 async function installLocalWheel(pyodide, packageName, wheelName) {
-  const loaded = pyodide.__kivroLocalWheelsLoaded || (pyodide.__kivroLocalWheelsLoaded = new Set());
+  const loaded = pyodide.__kivrioLocalWheelsLoaded || (pyodide.__kivrioLocalWheelsLoaded = new Set());
   if (loaded.has(packageName)) return;
-  pyodide.globals.set('__kivro_wheel_url', new URL(wheelName, assetsBaseUrl()).href);
+  pyodide.globals.set('__kivrio_wheel_url', new URL(wheelName, assetsBaseUrl()).href);
   try {
     await pyodide.runPythonAsync(`
 import micropip
-await micropip.install(__kivro_wheel_url)
+await micropip.install(__kivrio_wheel_url)
 `);
     loaded.add(packageName);
   } finally {
-    pyodide.globals.delete('__kivro_wheel_url');
+    pyodide.globals.delete('__kivrio_wheel_url');
   }
 }
 
@@ -134,12 +134,12 @@ function normalizeResult(payload) {
 async function executePython(code) {
   const pyodide = await ensurePyodide();
   await ensurePackagesForCode(pyodide, code);
-  pyodide.globals.set('__kivro_user_code', String(code || ''));
+  pyodide.globals.set('__kivrio_user_code', String(code || ''));
   try {
     const raw = await pyodide.runPythonAsync(PYTHON_RUNNER);
     return normalizeResult(JSON.parse(String(raw || '{}')));
   } finally {
-    pyodide.globals.delete('__kivro_user_code');
+    pyodide.globals.delete('__kivrio_user_code');
   }
 }
 

@@ -1,7 +1,7 @@
 // js/ui/autogrow.js
 (() => {
-  if (window.__kivroAutogrow) return;
-  window.__kivroAutogrow = true;
+  if (window.__kivrioAutogrow) return;
+  window.__kivrioAutogrow = true;
 
   const MAX = 240;                 // doit matcher le max-height CSS
   const SEL = '#composer-input';

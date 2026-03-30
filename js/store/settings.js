@@ -1,15 +1,26 @@
 // settings.js — source de vérité + compat LEGACY
-const KEY = 'kivro_settings_v1';
+const KEY = 'kivrio_settings_v1';
+const LEGACY_KEY = 'kivro_settings_v1';
 const LEGACY_MODEL_KEY = 'ollamaModel';
 
 // Lecture sûre localStorage
 const getLS = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 
+function readSettingsJson(preferredKey = KEY) {
+  const raw = getLS(preferredKey);
+  if (raw) return raw;
+  if (preferredKey !== KEY) {
+    const next = getLS(KEY);
+    if (next) return next;
+  }
+  return getLS(LEGACY_KEY) || '{}';
+}
+
 // État initial : JSON + fallback legacy
 const initial = (() => {
   try {
-    const json = JSON.parse(getLS(KEY) || '{}');
+    const json = JSON.parse(readSettingsJson());
     const base = { model: null, ollama_url: 'http://127.0.0.1:11434' };
     const st = Object.assign(base, json);
     // Fallback : si pas de modèle en state, lire ancienne clé 'ollamaModel'
@@ -38,6 +49,8 @@ const persist = () => {
   }
 };
 
+persist();
+
 // API publique
 export const getModel = () => state.model;
 
@@ -57,9 +70,9 @@ export const setOllamaUrl = (u) => {
 
 // (optionnel) Sync inter-onglets si besoin
 window.addEventListener?.('storage', (ev) => {
-  if (ev.key === KEY || ev.key === LEGACY_MODEL_KEY) {
+  if (ev.key === KEY || ev.key === LEGACY_KEY || ev.key === LEGACY_MODEL_KEY) {
     try {
-      const next = JSON.parse(getLS(KEY) || '{}');
+      const next = JSON.parse(readSettingsJson(ev.key === LEGACY_KEY ? LEGACY_KEY : KEY));
       if (next.model && next.model !== state.model) {
         state.model = next.model;
         document.dispatchEvent(new CustomEvent('settings:model-changed', { detail: state.model }));

@@ -36,7 +36,7 @@ ALLOWED_UPLOADS = {
 }
 
 
-class KivroHandler(SimpleHTTPRequestHandler):
+class KivrioHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT_DIR), **kwargs)
 
@@ -284,14 +284,14 @@ class KivroHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Kivro local server')
+    parser = argparse.ArgumentParser(description='Kivrio local server')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8000)
     args = parser.parse_args()
 
     db.init_db()
-    server = ThreadingHTTPServer((args.host, args.port), KivroHandler)
-    print(f'Kivro local server running on http://{args.host}:{args.port}/index.html')
+    server = ThreadingHTTPServer((args.host, args.port), KivrioHandler)
+    print(f'Kivrio local server running on http://{args.host}:{args.port}/index.html')
     print(f'SQLite database: {db.DB_PATH}')
     server.serve_forever()
 

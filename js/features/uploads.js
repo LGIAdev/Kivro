@@ -392,5 +392,5 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
 }
 
 if (typeof window !== 'undefined') {
-  window.kivroClearPendingUploads = clearPendingUploads;
+  window.kivrioClearPendingUploads = clearPendingUploads;
 }

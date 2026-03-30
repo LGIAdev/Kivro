@@ -1,13 +1,13 @@
 # Security Policy
 
 ## Supported Versions
-We currently support the latest version of **Kivro**.  
+We currently support the latest version of **Kivrio**.  
 Older versions may not receive security updates.
 
 ---
 
 ## Reporting a Vulnerability
-If you discover a security vulnerability in Kivro:
+If you discover a security vulnerability in Kivrio:
 
 1. **Do not open a public issue.**
 2. Instead, send a private report to: **[your email / security contact]**
@@ -28,4 +28,4 @@ If you discover a security vulnerability in Kivro:
 
 ## Responsible Disclosure
 We ask that you **do not publicly disclose the vulnerability** until a fix has been released,  
-to protect users of Kivro.
+to protect users of Kivrio.

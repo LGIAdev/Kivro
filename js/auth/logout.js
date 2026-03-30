@@ -1,6 +1,6 @@
 import { mountHistory, Store } from '../store/conversations.js';
 
-const OVERLAY_ID = 'kivro-login-overlay';
+const OVERLAY_ID = 'kivrio-login-overlay';
 
 function ensureOverlay() {
   let overlay = document.getElementById(OVERLAY_ID);
@@ -17,8 +17,8 @@ function ensureOverlay() {
   overlay.innerHTML = ''
     + '<div class="login-splash" role="document">'
     + '  <div class="login-card">'
-    + '    <div class="login-brand">Kivro</div>'
-    + '    <div class="login-title">Connectez-vous à Kivro</div>'
+    + '    <div class="login-brand">Kivrio</div>'
+    + '    <div class="login-title">Connectez-vous à Kivrio</div>'
     + '    <a href="#" id="login-btn" class="login-btn" role="button" aria-label="Connexion">Connexion</a>'
     + '  </div>'
     + '</div>';

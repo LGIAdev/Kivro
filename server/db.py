@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
-DB_PATH = DATA_DIR / 'kivro.db'
+DB_PATH = DATA_DIR / 'kivrio.db'
 SCHEMA_PATH = Path(__file__).resolve().parent / 'schema.sql'
 UPLOADS_DIR = DATA_DIR / 'uploads'
 SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9._-]+')
