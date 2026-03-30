@@ -1,5 +1,5 @@
 /* js/features/math/katex-init.js
-   Initialise KaTeX (offline) et expose window.kivroRenderMath()
+   Initialise KaTeX (offline) et expose window.kivrioRenderMath()
 */
 const KATEX_BASE = "assets/vendor/katex";
 
@@ -39,7 +39,7 @@ export async function initKatex() {
     await loadScriptOnce(`${KATEX_BASE}/contrib/auto-render.min.js`);
 
     // Expose la fonction de rendu
-    window.kivroRenderMath = (root = document) => {
+    window.kivrioRenderMath = (root = document) => {
       if (!window.renderMathInElement) return;
       window.renderMathInElement(root, {
         delimiters: [
@@ -55,7 +55,7 @@ export async function initKatex() {
     // ---- Auto-render sur nouveaux messages / mises à jour (streaming) ----
     (function enableAutoRender(){
       if (!window.MutationObserver) return;
-      if (window.__kivroKatexMO) return; // évite doublons si init appelée plusieurs fois
+      if (window.__kivrioKatexMO) return; // évite doublons si init appelée plusieurs fois
 
       const root = document.body; // on observe tout le document
       const isBubble = (el) => el && el.nodeType === 1 && el.classList?.contains('bubble');
@@ -63,7 +63,7 @@ export async function initKatex() {
       const scheduleRender = (el) => {
         if (!el) return;
         requestAnimationFrame(() => {
-          if (window.kivroRenderMath) window.kivroRenderMath(el);
+          if (window.kivrioRenderMath) window.kivrioRenderMath(el);
         });
       };
 
@@ -83,15 +83,15 @@ export async function initKatex() {
       });
 
       mo.observe(root, { childList: true, subtree: true, characterData: true });
-      window.__kivroKatexMO = mo;
+      window.__kivrioKatexMO = mo;
     })();
 
     // Premier passage (si du contenu existe déjà)
-    window.kivroRenderMath(document);
+    window.kivrioRenderMath(document);
 
     // Logs de validation
     console.log("KaTeX dispo ? renderMathInElement =", typeof window.renderMathInElement);
-    console.log("KaTeX dispo ? kivroRenderMath =", typeof window.kivroRenderMath);
+    console.log("KaTeX dispo ? kivrioRenderMath =", typeof window.kivrioRenderMath);
     console.debug("✅ KaTeX initialisé");
   } catch (err) {
     console.error("❌ Erreur init KaTeX:", err);

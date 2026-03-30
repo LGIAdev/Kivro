@@ -598,8 +598,8 @@ export async function sendCurrent() {
     const userBubble = renderMsg('user', text, { attachments: localAttachments });
     ta.value = '';
 
-    if (window.kivroEnsureConversationPromise) {
-      try { await window.kivroEnsureConversationPromise; } catch (_) {}
+    if (window.kivrioEnsureConversationPromise) {
+      try { await window.kivrioEnsureConversationPromise; } catch (_) {}
     }
 
     const base = readBase();

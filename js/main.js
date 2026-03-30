@@ -32,7 +32,7 @@ const CSS_CM_TO_PX = 96 / 2.54;
 
 function $(sel) { return document.querySelector(sel); }
 
-window.kivroSaveMessageEdit = async ({ conversationId, messageId, content }) => {
+window.kivrioSaveMessageEdit = async ({ conversationId, messageId, content }) => {
   if (!conversationId || messageId == null) {
     throw new Error('Message introuvable.');
   }
@@ -58,8 +58,8 @@ function makeTitleFromText(txt, max = 60) {
 
 function cancelOngoingStream() {
   try {
-    if (window.kivroAbortController && typeof window.kivroAbortController.abort === 'function') {
-      window.kivroAbortController.abort();
+    if (window.kivrioAbortController && typeof window.kivrioAbortController.abort === 'function') {
+      window.kivrioAbortController.abort();
     } else {
       document.dispatchEvent(new CustomEvent('ai:cancel'));
     }
@@ -77,7 +77,7 @@ function clearChatUI() {
   } catch (_) {}
   const log = $(SEL.chatLog);
   if (log) log.innerHTML = '';
-  try { window.kivroClearPendingUploads?.(); } catch (_) {}
+  try { window.kivrioClearPendingUploads?.(); } catch (_) {}
 }
 
 function getLatestUserTextFromChatLog() {
@@ -92,18 +92,18 @@ function getLatestUserTextFromChatLog() {
 }
 
 async function createConversationWithBestEffort(title) {
-  if (window.kivroEnsureConversationPromise) {
-    return window.kivroEnsureConversationPromise;
+  if (window.kivrioEnsureConversationPromise) {
+    return window.kivrioEnsureConversationPromise;
   }
 
-  window.kivroEnsureConversationPromise = (async () => {
+  window.kivrioEnsureConversationPromise = (async () => {
     let id = null;
     try {
       if (typeof Store?.create === 'function') {
         const conversation = await Store.create({ title });
         id = conversation?.id || null;
-      } else if (typeof window.kivroCreateConversation === 'function') {
-        id = await window.kivroCreateConversation(title);
+      } else if (typeof window.kivrioCreateConversation === 'function') {
+        id = await window.kivrioCreateConversation(title);
       } else {
         document.dispatchEvent(new CustomEvent('conversation:create', { detail: { title } }));
       }
@@ -114,9 +114,9 @@ async function createConversationWithBestEffort(title) {
   })();
 
   try {
-    return await window.kivroEnsureConversationPromise;
+    return await window.kivrioEnsureConversationPromise;
   } finally {
-    window.kivroEnsureConversationPromise = null;
+    window.kivrioEnsureConversationPromise = null;
   }
 }
 

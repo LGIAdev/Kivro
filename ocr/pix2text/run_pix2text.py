@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Kivro Pix2Text runner')
+    parser = argparse.ArgumentParser(description='Kivrio Pix2Text runner')
     parser.add_argument('image_path', help='Path to the image to analyze')
     parser.add_argument('--output', help='Optional markdown output path')
     parser.add_argument('--config', help='Optional Pix2Text configuration path')

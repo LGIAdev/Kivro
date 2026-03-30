@@ -71,7 +71,7 @@
   margin: 1em 0;
 }
 
-.markdown-body pre.kivro-fenced-code {
+.markdown-body pre.kivrio-fenced-code {
   margin: 0.6em 0;
 }
 
@@ -240,7 +240,7 @@
   background: white;
 }
 
-body.kivro-image-viewer-open {
+body.kivrio-image-viewer-open {
   overflow: hidden;
 }
 

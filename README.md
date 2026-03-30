@@ -1,12 +1,12 @@
-# Kivro
+# Kivrio
 
 ![Status](https://img.shields.io/badge/status-WIP-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20MPL--2.0-green)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/LGIAdev/Kivro?sort=semver)
-![Issues](https://img.shields.io/github/issues/LGIAdev/Kivro)
-![Pull Requests](https://img.shields.io/github/issues-pr/LGIAdev/Kivro)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/LGIAdev/Kivrio?sort=semver)
+![Issues](https://img.shields.io/github/issues/LGIAdev/Kivrio)
+![Pull Requests](https://img.shields.io/github/issues-pr/LGIAdev/Kivrio)
 
-Kivro is an open-source interface for running and managing AI models locally via [Ollama](https://ollama.com/).
+Kivrio is an open-source interface for running and managing AI models locally via [Ollama](https://ollama.com/).
 It provides a desktop-style web UI with math rendering, local conversation history, and a fully local persistence layer.
 
 Status: project under active development.
@@ -36,17 +36,17 @@ Status: project under active development.
 
 ## Local architecture
 
-Kivro now runs as a local application made of:
+Kivrio now runs as a local application made of:
 
 - a local Python server
 - a local SQLite database
 - a browser UI served from the same local server
-- local Ollama models running outside Kivro
-- a local Pix2Text OCR integration inside Kivro for non-multimodal models
+- local Ollama models running outside Kivrio
+- a local Pix2Text OCR integration inside Kivrio for non-multimodal models
 
 Conversation data is stored locally in:
 
-`data/kivro.db`
+`data/kivrio.db`
 
 No cloud database is used for conversation history.
 
@@ -61,7 +61,7 @@ OCR runtime files, downloaded model weights, temporary files and OCR outputs are
 Run:
 
 ```powershell
-.\start-kivro.bat
+.\start-kivrio.bat
 ```
 
 Then open:
@@ -71,7 +71,7 @@ Then open:
 ### Manual start
 
 ```powershell
-cd "$env:USERPROFILE\Documents\Kivro"
+cd "$env:USERPROFILE\Documents\Kivrio"
 py server\app.py --host 127.0.0.1 --port 8000
 ```
 
@@ -83,13 +83,13 @@ Make sure Ollama is installed locally and running, for example on:
 
 `http://127.0.0.1:11434`
 
-For non-multimodal models, Kivro can route image uploads through the local Pix2Text OCR flow before sending the extracted text to the model.
+For non-multimodal models, Kivrio can route image uploads through the local Pix2Text OCR flow before sending the extracted text to the model.
 
 ---
 
 ## Conversation history
 
-Kivro stores conversations locally in SQLite and rebuilds the left sidebar from the database at startup.
+Kivrio stores conversations locally in SQLite and rebuilds the left sidebar from the database at startup.
 
 Supported behavior:
 
@@ -110,7 +110,7 @@ Logging out of the interface no longer clears persistent conversation history.
 - `server/`: local API and SQLite access
 - `css/`: styles
 - `ocr/pix2text/`: local OCR integration scripts and stable config
-- `data/kivro.db`: local conversation database
+- `data/kivrio.db`: local conversation database
 
 ---
 
@@ -151,9 +151,9 @@ See `LICENSE`.
 
 ## Trademark notice
 
-The name Kivro, its logo, and its visual identity are trademarks of LG-IA ResearcherLab.
+The name Kivrio, its logo, and its visual identity are trademarks of LG-IA ResearcherLab.
 
-- You may not use the name Kivro or its logo for a modified project or a commercial product without prior written permission.
+- You may not use the name Kivrio or its logo for a modified project or a commercial product without prior written permission.
 - Forks must use different branding. References to the original project are allowed when they do not create confusion with the official version.
 
 For trademark inquiries: `contact@lg-ia-researchlab.fr`

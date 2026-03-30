@@ -1,6 +1,6 @@
-Contributing to Kivro
+Contributing to Kivrio
 
-Thank you for considering contributing to Kivro!
+Thank you for considering contributing to Kivrio!
 All kinds of contributions are welcome: bug reports, feature requests, documentation, or code improvements.
 
 ------------------------------------------------------------

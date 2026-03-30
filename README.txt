@@ -1,10 +1,10 @@
-Kivro - persistance locale SQLite
+Kivrio - persistance locale SQLite
 
 Lancement conseille (Windows) :
-  lancer start-kivro.bat
+  lancer start-kivrio.bat
 
 Lancement manuel :
-  cd "%USERPROFILE%\Documents\Kivro"
+  cd "%USERPROFILE%\Documents\Kivrio"
   py server\app.py --host 127.0.0.1 --port 8000
 Puis ouvrir :
   http://localhost:8000/index.html
@@ -12,7 +12,7 @@ Puis ouvrir :
 Fonctionnement :
 - l'interface web et l'API locale sont servies par le meme serveur Python local
 - les conversations sont enregistrees dans une base SQLite locale
-- la base est stockee dans : data\kivro.db
+- la base est stockee dans : data\kivrio.db
 - les conversations doivent rester disponibles apres fermeture de l'interface et redemarrage du PC
 
 Remarques :
