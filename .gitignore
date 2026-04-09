@@ -72,6 +72,9 @@ venv/
 # Local runtime data
 data/
 
+# Release artifacts
+releases/windows-installer/
+
 # =============================
 # Local OCR runtime / models
 # =============================

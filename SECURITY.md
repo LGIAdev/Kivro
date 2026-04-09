@@ -10,7 +10,7 @@ Older versions may not receive security updates.
 If you discover a security vulnerability in Kivrio:
 
 1. **Do not open a public issue.**
-2. Instead, send a private report to: **[your email / security contact]**
+2. Instead, send a private report to: **contact@lg-ia-researchlab.fr**
 3. Include:
    - A clear description of the issue
    - Steps to reproduce

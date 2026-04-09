@@ -133,10 +133,11 @@ def serialize_attachment(row: sqlite3.Row | dict | None) -> dict | None:
     if row is None:
         return None
     item = dict(row)
-    preview_path = item.get('preview_path') or item.get('storage_path')
     mime_type = item.get('mime_type') or 'application/octet-stream'
+    attachment_id = item.get('id')
+    attachment_url = f'/api/attachments/{attachment_id}/content' if attachment_id else None
     return {
-        'id': item.get('id'),
+        'id': attachment_id,
         'conversationId': item.get('conversation_id'),
         'messageId': item.get('message_id'),
         'filename': item.get('filename') or 'fichier',
@@ -147,8 +148,8 @@ def serialize_attachment(row: sqlite3.Row | dict | None) -> dict | None:
         'status': item.get('status') or 'stored',
         'createdAt': int(item.get('created_at') or 0),
         'sortOrder': int(item.get('sort_order') or 0),
-        'url': public_url(item.get('storage_path')),
-        'previewUrl': public_url(preview_path),
+        'url': attachment_url,
+        'previewUrl': attachment_url,
         'isImage': str(mime_type).startswith('image/'),
     }
 
@@ -429,6 +430,30 @@ def create_attachment(conversation_id: str, filename: str, mime_type: str, paylo
     if item is None:
         raise ValueError('Attachment could not be created.')
     return item
+
+
+def get_attachment(attachment_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            '''
+            SELECT
+              id,
+              conversation_id,
+              message_id,
+              filename,
+              mime_type,
+              size_bytes,
+              storage_path,
+              preview_path,
+              status,
+              created_at,
+              sort_order
+            FROM attachments
+            WHERE id = ?
+            ''',
+            (attachment_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_message_with_attachments(

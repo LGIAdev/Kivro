@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import cgi
+import hashlib
 import json
 import mimetypes
+import os
+import posixpath
+import secrets
 import sys
+import threading
+import time
+import traceback
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -20,11 +29,32 @@ import db  # noqa: E402
 import ocr  # noqa: E402
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_PDF_BYTES = 20 * 1024 * 1024
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 25 * 1024 * 1024
 MAX_FILES = 5
+SESSION_COOKIE_NAME = 'kivro_session'
+SESSION_TTL_SECONDS = max(300, int(os.getenv('KIVRO_SESSION_TTL_SECONDS', '43200') or '43200'))
+SESSION_COOKIE_SECURE = env_flag('KIVRO_COOKIE_SECURE', default=False)
+AUTH_DISABLED = env_flag('KIVRO_DISABLE_AUTH', default=False)
+CONFIGURED_ADMIN_PASSWORD = str(os.getenv('KIVRO_ADMIN_PASSWORD', '') or '').strip()
+AUTH_ENABLED = not AUTH_DISABLED
+AUTH_STATE_PATH = ROOT_DIR / 'data' / 'auth.json'
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 128
+PBKDF2_ITERATIONS = 310_000
+PUBLIC_STATIC_FILES = {'/index.html'}
+PUBLIC_STATIC_PREFIXES = ('/css/', '/js/', '/assets/')
+SESSIONS: dict[str, float] = {}
+SESSIONS_LOCK = threading.Lock()
 ALLOWED_UPLOADS = {
     '.jpg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
     '.jpeg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
@@ -36,6 +66,138 @@ ALLOWED_UPLOADS = {
 }
 
 
+def purge_expired_sessions() -> None:
+    if not AUTH_ENABLED:
+        return
+    now = time.time()
+    with SESSIONS_LOCK:
+        expired = [token for token, expiry in SESSIONS.items() if expiry <= now]
+        for token in expired:
+            SESSIONS.pop(token, None)
+
+
+def create_session() -> str:
+    purge_expired_sessions()
+    token = secrets.token_urlsafe(32)
+    with SESSIONS_LOCK:
+        SESSIONS[token] = time.time() + SESSION_TTL_SECONDS
+    return token
+
+
+def revoke_session(token: str | None) -> None:
+    if not token:
+        return
+    with SESSIONS_LOCK:
+        SESSIONS.pop(token, None)
+
+
+def has_valid_session(token: str | None) -> bool:
+    if not AUTH_ENABLED:
+        return True
+    if not token:
+        return False
+    purge_expired_sessions()
+    with SESSIONS_LOCK:
+        expiry = SESSIONS.get(token)
+        if expiry is None:
+            return False
+        SESSIONS[token] = time.time() + SESSION_TTL_SECONDS
+    return True
+
+
+def read_local_auth_record() -> dict | None:
+    if not AUTH_STATE_PATH.is_file():
+        return None
+    try:
+        payload = json.loads(AUTH_STATE_PATH.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    required = {'salt', 'passwordHash', 'iterations', 'createdAt'}
+    if not required.issubset(payload.keys()):
+        return None
+    return payload
+
+
+def auth_status_payload(*, authenticated: bool) -> dict:
+    setup_required = AUTH_ENABLED and not CONFIGURED_ADMIN_PASSWORD and read_local_auth_record() is None
+    password_source = (
+        'disabled' if not AUTH_ENABLED else
+        'environment' if CONFIGURED_ADMIN_PASSWORD else
+        'local' if not setup_required else
+        'unconfigured'
+    )
+    return {
+        'enabled': AUTH_ENABLED,
+        'authenticated': authenticated,
+        'setupRequired': setup_required,
+        'passwordSource': password_source,
+    }
+
+
+def validate_password(password: str) -> str:
+    value = str(password or '')
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f'Le mot de passe doit contenir au moins {PASSWORD_MIN_LENGTH} caracteres.')
+    if len(value) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f'Le mot de passe ne peut pas depasser {PASSWORD_MAX_LENGTH} caracteres.')
+    return value
+
+
+def build_password_record(password: str) -> dict:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt,
+        PBKDF2_ITERATIONS,
+    )
+    return {
+        'salt': base64.b64encode(salt).decode('ascii'),
+        'passwordHash': base64.b64encode(digest).decode('ascii'),
+        'iterations': PBKDF2_ITERATIONS,
+        'createdAt': int(time.time()),
+    }
+
+
+def persist_local_password(password: str) -> None:
+    record = build_password_record(validate_password(password))
+    AUTH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = AUTH_STATE_PATH.with_suffix('.tmp')
+    temp_path.write_text(json.dumps(record, ensure_ascii=True), encoding='utf-8')
+    temp_path.replace(AUTH_STATE_PATH)
+
+
+def verify_local_password(password: str, record: dict) -> bool:
+    try:
+        salt = base64.b64decode(str(record.get('salt') or ''))
+        expected = base64.b64decode(str(record.get('passwordHash') or ''))
+        iterations = int(record.get('iterations') or 0)
+    except (TypeError, ValueError):
+        return False
+    if not salt or not expected or iterations <= 0:
+        return False
+    computed = hashlib.pbkdf2_hmac(
+        'sha256',
+        str(password or '').encode('utf-8'),
+        salt,
+        iterations,
+    )
+    return secrets.compare_digest(computed, expected)
+
+
+def verify_password(password: str) -> bool:
+    if not AUTH_ENABLED:
+        return True
+    if CONFIGURED_ADMIN_PASSWORD:
+        return secrets.compare_digest(str(password or ''), CONFIGURED_ADMIN_PASSWORD)
+    record = read_local_auth_record()
+    if record is None:
+        return False
+    return verify_local_password(password, record)
+
+
 class KivrioHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT_DIR), **kwargs)
@@ -44,6 +206,9 @@ class KivrioHandler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
         super().end_headers()
 
     def do_GET(self) -> None:
@@ -52,8 +217,15 @@ class KivrioHandler(SimpleHTTPRequestHandler):
             self.handle_api('GET', parsed.path)
             return
 
-        if parsed.path == '/':
+        normalized = self.normalize_static_path(parsed.path)
+        if not self.is_public_static_path(normalized):
+            self.send_error(HTTPStatus.NOT_FOUND, 'Resource not found.')
+            return
+
+        if normalized == '/':
             self.path = '/index.html'
+        else:
+            self.path = normalized
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -68,10 +240,131 @@ class KivrioHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         self.handle_api('DELETE', parsed.path)
 
+    def list_directory(self, path: str):
+        self.send_error(HTTPStatus.NOT_FOUND, 'Directory listing disabled.')
+        return None
+
+    def normalize_static_path(self, path: str) -> str:
+        normalized = posixpath.normpath(unquote(path or '/'))
+        if not normalized.startswith('/'):
+            normalized = '/' + normalized
+        return normalized
+
+    def is_public_static_path(self, path: str) -> bool:
+        if path == '/':
+            return True
+        if path in PUBLIC_STATIC_FILES:
+            return True
+        return any(path.startswith(prefix) for prefix in PUBLIC_STATIC_PREFIXES)
+
+    def get_session_token(self) -> str | None:
+        raw = self.headers.get('Cookie', '')
+        if not raw:
+            return None
+        cookie = SimpleCookie()
+        try:
+            cookie.load(raw)
+        except Exception:
+            return None
+        morsel = cookie.get(SESSION_COOKIE_NAME)
+        return morsel.value if morsel else None
+
+    def is_authenticated(self) -> bool:
+        return has_valid_session(self.get_session_token())
+
+    def require_auth(self) -> bool:
+        if self.is_authenticated():
+            return True
+        self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Authentication required.')
+        return False
+
+    def build_session_cookie(self, token: str, *, clear: bool = False) -> str:
+        parts = [f'{SESSION_COOKIE_NAME}={token}']
+        parts.append('Path=/')
+        parts.append('HttpOnly')
+        parts.append('SameSite=Lax')
+        parts.append('Max-Age=0' if clear else f'Max-Age={SESSION_TTL_SECONDS}')
+        if clear:
+            parts.append('Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+        if SESSION_COOKIE_SECURE:
+            parts.append('Secure')
+        return '; '.join(parts)
+
+    def send_file_response(self, absolute_path: Path, *, mime_type: str | None = None) -> None:
+        try:
+            body = absolute_path.read_bytes()
+        except FileNotFoundError:
+            self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
+            return
+
+        content_type = mime_type or mimetypes.guess_type(str(absolute_path))[0] or 'application/octet-stream'
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def handle_api(self, method: str, path: str) -> None:
         try:
             if method == 'GET' and path == '/api/health':
                 self.send_json({'ok': True, 'db': 'ready'})
+                return
+
+            if method == 'GET' and path == '/api/auth/status':
+                self.send_json(auth_status_payload(authenticated=self.is_authenticated()))
+                return
+
+            if method == 'POST' and path == '/api/auth/setup':
+                if not AUTH_ENABLED:
+                    self.send_json(auth_status_payload(authenticated=True))
+                    return
+                if CONFIGURED_ADMIN_PASSWORD:
+                    self.send_error_json(
+                        HTTPStatus.CONFLICT,
+                        'La creation locale du mot de passe est desactivee quand KIVRO_ADMIN_PASSWORD est defini.',
+                    )
+                    return
+                if read_local_auth_record() is not None:
+                    self.send_error_json(HTTPStatus.CONFLICT, 'Le mot de passe est deja configure.')
+                    return
+                body = self.read_json_body()
+                password = validate_password(body.get('password'))
+                persist_local_password(password)
+                token = create_session()
+                self.send_json(
+                    auth_status_payload(authenticated=True),
+                    headers=[('Set-Cookie', self.build_session_cookie(token))],
+                )
+                return
+
+            if method == 'POST' and path == '/api/auth/login':
+                if not AUTH_ENABLED:
+                    self.send_json(auth_status_payload(authenticated=True))
+                    return
+                if not CONFIGURED_ADMIN_PASSWORD and read_local_auth_record() is None:
+                    self.send_error_json(HTTPStatus.CONFLICT, 'Password setup required.')
+                    return
+                body = self.read_json_body()
+                password = str(body.get('password') or '')
+                if not verify_password(password):
+                    self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Invalid credentials.')
+                    return
+                token = create_session()
+                self.send_json(
+                    auth_status_payload(authenticated=True),
+                    headers=[('Set-Cookie', self.build_session_cookie(token))],
+                )
+                return
+
+            if method == 'POST' and path == '/api/auth/logout':
+                revoke_session(self.get_session_token())
+                self.send_json(
+                    {**auth_status_payload(authenticated=False), 'ok': True},
+                    headers=[('Set-Cookie', self.build_session_cookie('', clear=True))],
+                )
+                return
+
+            if not self.require_auth():
                 return
 
             if method == 'GET' and path == '/api/system-prompt':
@@ -100,6 +393,26 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                 return
 
             parts = [part for part in path.strip('/').split('/') if part]
+            if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'attachments' and parts[3] == 'content':
+                attachment_id = unquote(parts[2])
+                attachment = db.get_attachment(attachment_id)
+                if attachment is None:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
+                    return
+                storage_path = Path(str(attachment.get('storage_path') or '')).as_posix().lstrip('/')
+                if not storage_path:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
+                    return
+                absolute = (ROOT_DIR / storage_path).resolve()
+                if ROOT_DIR.resolve() not in absolute.parents:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
+                    return
+                self.send_file_response(
+                    absolute,
+                    mime_type=str(attachment.get('mime_type') or 'application/octet-stream'),
+                )
+                return
+
             if len(parts) >= 3 and parts[0] == 'api' and parts[1] == 'conversations':
                 conversation_id = unquote(parts[2])
 
@@ -200,8 +513,9 @@ class KivrioHandler(SimpleHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         except json.JSONDecodeError:
             self.send_error_json(HTTPStatus.BAD_REQUEST, 'Invalid JSON body.')
-        except Exception as exc:
-            self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+        except Exception:
+            traceback.print_exc()
+            self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, 'Internal server error.')
 
     def read_json_body(self) -> dict:
         length = int(self.headers.get('Content-Length', '0') or '0')
@@ -271,11 +585,18 @@ class KivrioHandler(SimpleHTTPRequestHandler):
             raise ValueError('Aucun fichier recu.')
         return uploads
 
-    def send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(
+        self,
+        payload: object,
+        status: HTTPStatus = HTTPStatus.OK,
+        headers: list[tuple[str, str]] | None = None,
+    ) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
+        for key, value in (headers or []):
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -293,6 +614,16 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), KivrioHandler)
     print(f'Kivrio local server running on http://{args.host}:{args.port}/index.html')
     print(f'SQLite database: {db.DB_PATH}')
+    if AUTH_ENABLED:
+        print('Authentication: enabled')
+        if CONFIGURED_ADMIN_PASSWORD:
+            print('Admin password source: KIVRO_ADMIN_PASSWORD')
+        elif read_local_auth_record() is not None:
+            print(f'Admin password source: {AUTH_STATE_PATH}')
+        else:
+            print('Admin password setup required on first launch')
+    else:
+        print('Authentication: disabled via KIVRO_DISABLE_AUTH')
     server.serve_forever()
 
 

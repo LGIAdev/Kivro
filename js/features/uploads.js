@@ -214,6 +214,11 @@ async function requestPix2TextOcr(imageItems) {
   } catch (_) {}
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('kivro:auth-required', {
+        detail: { message: payload?.error || 'Authentication required.' },
+      }));
+    }
     throw new Error(payload?.error || `HTTP ${res.status}`);
   }
 

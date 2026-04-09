@@ -3,10 +3,18 @@ const JSON_HEADERS = {
   'Content-Type': 'application/json',
 };
 
+function notifyAuthRequired(message) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('kivro:auth-required', {
+    detail: { message: String(message || 'Authentication required.') },
+  }));
+}
+
 async function request(path, options = {}) {
   const config = { ...options };
   const method = (config.method || 'GET').toUpperCase();
   const url = new URL(path, window.location.origin);
+  config.credentials = 'same-origin';
 
   if (method === 'GET') {
     url.searchParams.set('_ts', String(Date.now()));
@@ -34,6 +42,9 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const message = payload && payload.error ? payload.error : `HTTP ${res.status}`;
+    if (res.status === 401 && !url.pathname.startsWith('/api/auth/login')) {
+      notifyAuthRequired(message);
+    }
     throw new Error(message);
   }
 
@@ -103,5 +114,30 @@ export async function uploadConversationAttachments(id, files) {
 export function deleteConversation(id) {
   return request(`/api/conversations/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  });
+}
+
+export function getAuthStatus() {
+  return request('/api/auth/status');
+}
+
+export function login(password) {
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: { password: password == null ? '' : String(password) },
+  });
+}
+
+export function setupPassword(password) {
+  return request('/api/auth/setup', {
+    method: 'POST',
+    body: { password: password == null ? '' : String(password) },
+  });
+}
+
+export function logout() {
+  return request('/api/auth/logout', {
+    method: 'POST',
+    body: {},
   });
 }

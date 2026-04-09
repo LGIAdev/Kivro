@@ -3,7 +3,7 @@
 import { initTheme } from './core/theme.js';
 import { wireUserMenu, wirePromptModal, wireSettingsModal } from './ui/menus.js';
 import { wireSendAction, mountStatusPill } from './ui/actions.js';
-import { wireLogout } from './auth/logout.js';
+import { initAuthGate, wireLogout } from './auth/logout.js';
 import { wireUploads } from './features/uploads.js';
 import { regenerateFromEditedMessage } from './net/ollama.js';
 import('./features/math/katex-init.js')
@@ -335,7 +335,10 @@ function wireSidebarResize() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
-  try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
+  const auth = await initAuthGate();
+  if (auth.authenticated) {
+    try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
+  }
   wireUserMenu();
   wirePromptModal();
   wireSettingsModal();
@@ -350,7 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   startChatLogObserver();
 
   const currentId = Store.currentId?.() || null;
-  if (currentId) {
+  if (auth.authenticated && currentId) {
     try { await Store.ensureLoaded(currentId); } catch (_) {}
   }
   state.awaitingFirstPrompt = !hasCurrentConversation();

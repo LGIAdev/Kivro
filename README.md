@@ -85,6 +85,15 @@ Make sure Ollama is installed locally and running, for example on:
 
 For non-multimodal models, Kivrio can route image uploads through the local Pix2Text OCR flow before sending the extracted text to the model.
 
+### Authentication
+
+Kivro now protects its API with a session login by default.
+
+- If `KIVRO_ADMIN_PASSWORD` is defined before startup, Kivro uses that password for login.
+- Otherwise, on first launch, the user is prompted to create a personal password for that local Kivro instance.
+- Once created, the local password is reused for future logins on the same machine.
+- For explicit local-only development, authentication can be disabled with `KIVRO_DISABLE_AUTH=1`.
+
 ---
 
 ## Conversation history
