@@ -603,6 +603,70 @@
   overflow-wrap:break-word;  /* casse seulement en dernier recours */
   hyphens:none;
 }
+
+.msg .bubble table.variation-table{
+  width:max-content;
+  min-width:max-content;
+  table-layout:auto;
+}
+
+.msg .bubble table.variation-table th,
+.msg .bubble table.variation-table td{
+  width:auto;
+  min-width:clamp(4.75rem, 7vw, 6.5rem);
+  padding:10px 12px;
+  text-align:center;
+  vertical-align:middle;
+  white-space:nowrap;
+  overflow-wrap:normal;
+  word-break:normal;
+  hyphens:none;
+}
+
+.msg .bubble table.variation-table .variation-label{
+  min-width:clamp(8rem, 11vw, 11rem);
+  text-align:center;
+  font-weight:700;
+}
+
+.msg .bubble table.variation-table .variation-axis-point,
+.msg .bubble table.variation-table .variation-value-point{
+  min-width:clamp(5.25rem, 8vw, 7rem);
+}
+
+.msg .bubble table.variation-table .variation-axis-gap,
+.msg .bubble table.variation-table .variation-interval,
+.msg .bubble table.variation-table .variation-point-marker{
+  min-width:clamp(3rem, 4vw, 4.25rem);
+  padding-inline:8px;
+}
+
+.msg .bubble table.variation-table .variation-sign-cell{
+  font-weight:700;
+}
+
+.msg .bubble table.variation-table .variation-arrow-cell{
+  background:rgba(255,255,255,.02);
+}
+
+.msg .bubble table.variation-table .variation-math,
+.msg .bubble table.variation-table .variation-text,
+.msg .bubble table.variation-table .variation-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:1.25rem;
+}
+
+.msg .bubble table.variation-table .variation-arrow-cell .variation-math{
+  font-size:1.25rem;
+  line-height:1;
+}
+
+.msg .bubble table.variation-table .variation-row-function td{
+  padding-top:14px;
+  padding-bottom:14px;
+}
 /* Conserver le nowrap uniquement pour les formules KaTeX (rendu stable) */
 .msg .bubble .katex .base,
 .msg .bubble .katex-display > .katex{

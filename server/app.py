@@ -26,6 +26,18 @@ if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
 import db  # noqa: E402
+import math_derivative  # noqa: E402
+import math_derivative_render  # noqa: E402
+import math_equation  # noqa: E402
+import math_equation_render  # noqa: E402
+import math_integral  # noqa: E402
+import math_integral_render  # noqa: E402
+import math_limit  # noqa: E402
+import math_limit_render  # noqa: E402
+import math_ode  # noqa: E402
+import math_ode_render  # noqa: E402
+import math_variation  # noqa: E402
+import math_variation_render  # noqa: E402
 import ocr  # noqa: E402
 
 
@@ -390,6 +402,144 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                         raise ValueError('Le moteur OCR Pix2Text accepte uniquement des images.')
                     images.append(item)
                 self.send_json(ocr.run_pix2text_batch(images))
+                return
+
+            if method == 'POST' and path == '/api/math/variation-table':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('function') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_variation.analyze_variation(expression, variable)
+                except math_variation.VariationAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-variation',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_variation_render.build_variation_html(payload)
+                self.send_json(payload)
+                return
+
+            if method == 'POST' and path == '/api/math/equation-solve':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('equation') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_equation.analyze_equation(expression, variable)
+                except math_equation.EquationAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-equation',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_equation_render.build_equation_html(payload)
+                self.send_json(payload)
+                return
+
+            if method == 'POST' and path == '/api/math/derivative':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_derivative.analyze_derivative(expression, variable)
+                except math_derivative.DerivativeAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-derivative',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_derivative_render.build_derivative_html(payload)
+                self.send_json(payload)
+                return
+
+            if method == 'POST' and path == '/api/math/limit':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_limit.analyze_limit(expression, variable)
+                except math_limit.LimitAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-limit',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_limit_render.build_limit_html(payload)
+                self.send_json(payload)
+                return
+
+            if method == 'POST' and path == '/api/math/integral':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_integral.analyze_integral(expression, variable)
+                except math_integral.IntegralAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-integral',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_integral_render.build_integral_html(payload)
+                self.send_json(payload)
+                return
+
+            if method == 'POST' and path == '/api/math/ode':
+                body = self.read_json_body()
+                expression = body.get('expression') or body.get('equation') or body.get('content') or ''
+                variable = body.get('variable')
+                try:
+                    payload = math_ode.analyze_ode(expression, variable)
+                except math_ode.OdeAnalysisError as exc:
+                    self.send_json(
+                        {
+                            'ok': False,
+                            'status': 'fallback',
+                            'pipeline': 'deterministic-ode',
+                            'reason': getattr(exc, 'code', 'analysis_failed'),
+                            'error': str(exc),
+                        },
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+                payload['status'] = 'ok'
+                payload['html'] = math_ode_render.build_ode_html(payload)
+                self.send_json(payload)
                 return
 
             parts = [part for part in path.strip('/').split('/') if part]

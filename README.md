@@ -15,6 +15,9 @@ Status: project under active development.
 
 ## Releases
 
+- [Kivrio 2026.4.15](releases/Kivrio-2026.4.15.md)
+- [Kivrio 2026.4.9](releases/Kivrio-2026.4.9.md)
+- [Releases v2026.3.29](releases/v2026.3.29.md)
 - [Releases v2026.3.27.1](releases/v2026.3.27.1.md)
 - [Releases v2026.3.27](releases/v2026.3.27.md)
 
@@ -31,6 +34,7 @@ Status: project under active development.
 - Local Python backend serving both the UI and the API
 - Direct file reading for supported multimodal models
 - Local Pix2Text OCR for image uploads sent to non-multimodal models
+- Deterministic local math tools for variation tables, equations, derivatives, limits, integrals, and ODEs
 
 ---
 
@@ -87,10 +91,10 @@ For non-multimodal models, Kivrio can route image uploads through the local Pix2
 
 ### Authentication
 
-Kivro now protects its API with a session login by default.
+Kivrio now protects its API with a session login by default.
 
-- If `KIVRO_ADMIN_PASSWORD` is defined before startup, Kivro uses that password for login.
-- Otherwise, on first launch, the user is prompted to create a personal password for that local Kivro instance.
+- If `KIVRO_ADMIN_PASSWORD` is defined before startup, Kivrio uses that password for login.
+- Otherwise, on first launch, the user is prompted to create a personal password for that local Kivrio instance.
 - Once created, the local password is reused for future logins on the same machine.
 - For explicit local-only development, authentication can be disabled with `KIVRO_DISABLE_AUTH=1`.
 

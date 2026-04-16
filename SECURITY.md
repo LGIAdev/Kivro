@@ -21,7 +21,7 @@ If you discover a security vulnerability in Kivrio:
 
 ## Response Process
 - We will acknowledge receipt of your report within **7 days**.
-- We aim to investigate and provide a fix or mitigation within **14–30 days**.
+- We aim to investigate and provide a fix or mitigation within **14-30 days**.
 - Once resolved, we will publish a new release and mention the fix in the release notes.
 
 ---
