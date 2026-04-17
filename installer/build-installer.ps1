@@ -140,7 +140,7 @@ $itemsToCopy = @(
     'LICENSE',
     'CODE_OF_CONDUCT.md',
     'CONTRIBUTING.md',
-    'start-kivro.bat',
+    'start-kivrio.bat',
     'start-kivro-hidden.vbs',
     'start_localhost.bat'
 )
@@ -177,6 +177,7 @@ $compilerArgs = @(
     '/optimize+',
     "/out:$stubExe",
     "/win32icon:$iconPath",
+    '/r:System.Drawing.dll',
     '/r:System.Windows.Forms.dll',
     '/r:System.IO.Compression.dll',
     '/r:System.IO.Compression.FileSystem.dll',

@@ -2,6 +2,18 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.17] - 2026-04-17
+
+### Added
+- Added local guidance messages for deterministic math tools when a math intent is recognized but the expression cannot yet be parsed.
+- Added broader natural-language request prefix stripping across derivative, limit, equation, integral, variation, and ODE analyzers.
+- Added a Windows installer progress window and refreshed the desktop icon asset used by the installer flow.
+
+### Changed
+- Improved the local math router so more natural French prompts stay on deterministic pipelines instead of falling back immediately to the language model.
+- Improved the variation pipeline so prompts like `etudier les variations de ...` are handled more robustly, with or without an explicit `f(x)=...`.
+- Preserved the language model for explanations and demonstrations while keeping deterministic computation local when the intent is recognized.
+
 ## [2026.4.15] - 2026-04-15
 
 ### Added

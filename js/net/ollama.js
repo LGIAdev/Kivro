@@ -61,13 +61,115 @@ const VARIATION_FALLBACK_GUIDANCE = [
   const EQUATION_SOLVE_HTML_OPEN = '<equation-solve-html>';
   const EQUATION_SOLVE_HTML_CLOSE = '</equation-solve-html>';
   const DERIVATIVE_HTML_OPEN = '<derivative-html>';
-  const DERIVATIVE_HTML_CLOSE = '</derivative-html>';
-  const LIMIT_HTML_OPEN = '<limit-html>';
-  const LIMIT_HTML_CLOSE = '</limit-html>';
-  const INTEGRAL_HTML_OPEN = '<integral-html>';
-  const INTEGRAL_HTML_CLOSE = '</integral-html>';
-  const ODE_HTML_OPEN = '<ode-html>';
-  const ODE_HTML_CLOSE = '</ode-html>';
+const DERIVATIVE_HTML_CLOSE = '</derivative-html>';
+const LIMIT_HTML_OPEN = '<limit-html>';
+const LIMIT_HTML_CLOSE = '</limit-html>';
+const INTEGRAL_HTML_OPEN = '<integral-html>';
+const INTEGRAL_HTML_CLOSE = '</integral-html>';
+const ODE_HTML_OPEN = '<ode-html>';
+const ODE_HTML_CLOSE = '</ode-html>';
+const VARIATION_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_variable',
+  'ambiguous_variable',
+  'constant_expression',
+  'missing_study_interval',
+  'invalid_study_interval',
+]);
+const EQUATION_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_equation',
+  'invalid_equation',
+  'parse_failed',
+  'invalid_variable',
+  'ambiguous_variable',
+  'constant_equation',
+  'unsupported_equation',
+]);
+const DERIVATIVE_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_variable',
+  'ambiguous_variable',
+]);
+const LIMIT_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'missing_limit',
+  'missing_target',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_target',
+  'invalid_variable',
+  'ambiguous_variable',
+]);
+const INTEGRAL_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'missing_integral',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_bound',
+]);
+const ODE_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_equation',
+  'invalid_equation',
+  'missing_derivative',
+  'parse_failed',
+  'invalid_variable',
+  'invalid_function',
+  'unsupported_order',
+  'unsupported_ode',
+]);
+const VARIATION_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez un tableau de variation, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- tableau de variation de x^3 - 3x',
+  '- \u00e9tudier les variations de x^2 + 1',
+  '- \u00e9tudier les variations de f(x)=x^2 + 1',
+  '- variations de sin(x) sur [0, pi]',
+].join('\n');
+const EQUATION_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une r\u00e9solution d\'\u00e9quation, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- r\u00e9soudre x^2 - 4 = 0',
+  '- solution de 2x + 3 = 7',
+  '- r\u00e9soudre sin(x) = 0',
+].join('\n');
+const DERIVATIVE_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une d\u00e9riv\u00e9e, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- d\u00e9riv\u00e9e de x^3',
+  '- calculer la d\u00e9riv\u00e9e de sin(x)',
+  '- d\u00e9riv\u00e9e de e^x + x^2',
+].join('\n');
+const LIMIT_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une limite, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- limite de sin(x)/x quand x tend vers 0',
+  '- calculer la limite de (x^2 - 1)/(x - 1) quand x tend vers 1',
+  '- limite de 1/x quand x tend vers +infini',
+].join('\n');
+const INTEGRAL_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une int\u00e9grale, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- int\u00e9grale de x^2',
+  '- calculer l\'int\u00e9grale de x^2 entre 0 et 2',
+  '- primitive de sin(x)',
+].join('\n');
+const ODE_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une \u00e9quation diff\u00e9rentielle, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- r\u00e9soudre y\' = y',
+  '- \u00e9quation diff\u00e9rentielle y\'\' + y = 0',
+  '- solution de y\' + 2y = 3',
+].join('\n');
 const getRaw = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
@@ -335,13 +437,18 @@ function looksLikeVariationTableRequest(text) {
   const asksVariationTable =
     /tableau\s+de\s+variation/.test(raw) ||
     /tableau\s+des\s+variations/.test(raw) ||
-    (/\bvariation\b/.test(raw) && /\btableau\b/.test(raw));
+    (/\bvariation\b/.test(raw) && /\btableau\b/.test(raw)) ||
+    /\betudier\s+les?\s+variations?\b/.test(raw) ||
+    /\betudiez\s+les?\s+variations?\b/.test(raw) ||
+    /\bdress(?:er|ez)\s+le\s+tableau\s+de\s+variation\b/.test(raw) ||
+    /\bvariations?\s+de\b/.test(raw);
 
   const mentionsFunction =
     /\bfonction\b/.test(raw) ||
     /\bderivee\b/.test(raw) ||
     /\bsigne\s+de\b/.test(raw) ||
-    /[a-z]\s*\(\s*x\s*\)/.test(raw);
+    /[a-z]\s*\(\s*x\s*\)/.test(raw) ||
+    /[a-z0-9)\]]/.test(raw);
 
   return asksVariationTable && mentionsFunction;
 }
@@ -527,6 +634,67 @@ function wrapIntegralHtml(html) {
   return `${INTEGRAL_HTML_OPEN}${body}${INTEGRAL_HTML_CLOSE}`;
 }
 
+function shouldShowGuidance(reason, allowedReasons) {
+  return allowedReasons.has(String(reason || '').trim());
+}
+
+function shouldShowVariationGuidance(reason) {
+  return shouldShowGuidance(reason, VARIATION_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowEquationGuidance(reason) {
+  return shouldShowGuidance(reason, EQUATION_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowDerivativeGuidance(reason) {
+  return shouldShowGuidance(reason, DERIVATIVE_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowLimitGuidance(reason) {
+  return shouldShowGuidance(reason, LIMIT_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowIntegralGuidance(reason) {
+  return shouldShowGuidance(reason, INTEGRAL_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowOdeGuidance(reason) {
+  return shouldShowGuidance(reason, ODE_LOCAL_GUIDANCE_REASONS);
+}
+
+function createLocalGuidancePayload(answerText, pipeline) {
+  return {
+    answerText: String(answerText || '').trim(),
+    reasoningText: '',
+    reasoningDurationMs: null,
+    pipeline: String(pipeline || '').trim() || 'deterministic-guidance',
+  };
+}
+
+function createVariationGuidancePayload() {
+  return createLocalGuidancePayload(VARIATION_LOCAL_GUIDANCE_MESSAGE, 'deterministic-variation-guidance');
+}
+
+function createEquationGuidancePayload() {
+  return createLocalGuidancePayload(EQUATION_LOCAL_GUIDANCE_MESSAGE, 'deterministic-equation-guidance');
+}
+
+function createDerivativeGuidancePayload() {
+  return createLocalGuidancePayload(DERIVATIVE_LOCAL_GUIDANCE_MESSAGE, 'deterministic-derivative-guidance');
+}
+
+function createLimitGuidancePayload() {
+  return createLocalGuidancePayload(LIMIT_LOCAL_GUIDANCE_MESSAGE, 'deterministic-limit-guidance');
+}
+
+function createIntegralGuidancePayload() {
+  return createLocalGuidancePayload(INTEGRAL_LOCAL_GUIDANCE_MESSAGE, 'deterministic-integral-guidance');
+}
+
+function createOdeGuidancePayload() {
+  return createLocalGuidancePayload(ODE_LOCAL_GUIDANCE_MESSAGE, 'deterministic-ode-guidance');
+}
+
 function wrapOdeHtml(html) {
   const body = String(html || '').trim();
   if (!body) return '';
@@ -643,10 +811,21 @@ async function requestDeterministicVariationTable(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowVariationGuidance(reason)) {
+        return createVariationPipelineAttempt({
+          matched: true,
+          payload: createVariationGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createVariationPipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapVariationTableHtml(payload?.html || '');
@@ -690,10 +869,21 @@ async function requestDeterministicEquationSolve(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowEquationGuidance(reason)) {
+        return createEquationPipelineAttempt({
+          matched: true,
+          payload: createEquationGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createEquationPipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapEquationSolveHtml(payload?.html || '');
@@ -737,10 +927,21 @@ async function requestDeterministicDerivative(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowDerivativeGuidance(reason)) {
+        return createDerivativePipelineAttempt({
+          matched: true,
+          payload: createDerivativeGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createDerivativePipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapDerivativeHtml(payload?.html || '');
@@ -784,10 +985,21 @@ async function requestDeterministicLimit(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowLimitGuidance(reason)) {
+        return createLimitPipelineAttempt({
+          matched: true,
+          payload: createLimitGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createLimitPipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapLimitHtml(payload?.html || '');
@@ -831,10 +1043,21 @@ async function requestDeterministicIntegral(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowIntegralGuidance(reason)) {
+        return createIntegralPipelineAttempt({
+          matched: true,
+          payload: createIntegralGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createIntegralPipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapIntegralHtml(payload?.html || '');
@@ -878,10 +1101,21 @@ async function requestDeterministicOde(prompt) {
       payload = await res.json();
     } catch (_) {}
     if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = String(payload?.error || '');
+      if (shouldShowOdeGuidance(reason)) {
+        return createOdePipelineAttempt({
+          matched: true,
+          payload: createOdeGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
       return createOdePipelineAttempt({
         matched: true,
-        fallbackReason: String(payload?.reason || `http-${res.status}`),
-        fallbackMessage: String(payload?.error || ''),
+        fallbackReason: reason,
+        fallbackMessage,
       });
     }
     const html = wrapOdeHtml(payload?.html || '');

@@ -15,6 +15,7 @@ Status: project under active development.
 
 ## Releases
 
+- [Kivrio 2026.4.17](releases/Kivrio-2026.4.17.md)
 - [Kivrio 2026.4.15](releases/Kivrio-2026.4.15.md)
 - [Kivrio 2026.4.9](releases/Kivrio-2026.4.9.md)
 - [Releases v2026.3.29](releases/v2026.3.29.md)

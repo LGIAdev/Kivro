@@ -49,6 +49,20 @@ TRAILING_CONTEXT_RE = re.compile(
     r"\s+(?:dans|sur|avec|alors|puis|ensuite)\b.*$",
     re.IGNORECASE,
 )
+LEADING_REQUEST_PATTERNS = (
+    re.compile(
+        r"^\s*(?:peux(?:\s*-\s*|\s+)tu|pourrais(?:\s*-\s*|\s+)tu|veux(?:\s*-\s*|\s+)tu)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:merci\s+de|s'?il\s+te\s+plait)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|solutionner)\s+",
+        re.IGNORECASE,
+    ),
+)
 
 
 class DerivativeAnalysisError(ValueError):
@@ -108,6 +122,22 @@ def _normalize_expression_candidate(text: str) -> str:
     return candidate
 
 
+def _strip_leading_request_phrases(text: str) -> str:
+    candidate = _normalize_math_text(text).strip()
+    if not candidate:
+        return ""
+
+    changed = True
+    while changed and candidate:
+        changed = False
+        for pattern in LEADING_REQUEST_PATTERNS:
+            next_candidate = pattern.sub("", candidate, count=1).strip()
+            if next_candidate != candidate:
+                candidate = next_candidate
+                changed = True
+    return candidate
+
+
 def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
     raw = _normalize_math_text(text).strip()
     if not raw:
@@ -117,7 +147,7 @@ def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
     hinted_variable = variable_match.group(1).strip() if variable_match else None
 
     for line in raw.splitlines():
-        candidate_line = line.strip()
+        candidate_line = _strip_leading_request_phrases(line)
         if not candidate_line:
             continue
 
@@ -132,7 +162,7 @@ def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
         if expr:
             return expr, hinted_variable
 
-    expr = _normalize_expression_candidate(raw)
+    expr = _normalize_expression_candidate(_strip_leading_request_phrases(raw))
     if expr:
         return expr, hinted_variable
 

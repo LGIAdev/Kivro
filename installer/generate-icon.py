@@ -6,7 +6,6 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-BG = "#0f1115"
 SQUARE = "#6ea8fe"
 TEXT = "#f8fafc"
 SIZES = [16, 24, 32, 48, 64, 128, 256]
@@ -25,7 +24,7 @@ def resolve_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def build_icon(size: int = 256) -> Image.Image:
-    image = Image.new("RGBA", (size, size), BG)
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     padding = int(size * 0.14)
     radius = int(size * 0.18)

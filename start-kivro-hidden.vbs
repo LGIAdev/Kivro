@@ -8,6 +8,6 @@ Dim launcher
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 root = fso.GetParentFolderName(WScript.ScriptFullName)
-launcher = """" & fso.BuildPath(root, "start-kivro.bat") & """"
+launcher = """" & fso.BuildPath(root, "start-kivrio.bat") & """"
 
 shell.Run launcher, 0, False

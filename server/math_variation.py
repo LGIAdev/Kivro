@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Iterable
 
 import sympy as sp
@@ -45,6 +46,33 @@ TRAILING_CONTEXT_RE = re.compile(
     r"\s+(?:sur|pour|avec|dans|lorsque|quand|ou|où|si|afin|afin\s+de|puis|ensuite|etudier|etudier|dresser|dressez|donner|calculez|calculer)\b.*$",
     re.IGNORECASE,
 )
+LEADING_REQUEST_PATTERNS = (
+    re.compile(
+        r"^\s*(?:peux(?:\s*-\s*|\s+)tu|pourrais(?:\s*-\s*|\s+)tu|veux(?:\s*-\s*|\s+)tu)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:merci\s+de|s'?il\s+te\s+plait)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|etudier|etudiez|dresser|dressez)\s+",
+        re.IGNORECASE,
+    ),
+)
+VARIATION_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:le\s+)?tableau\s+de\s+variation(?:s)?|(?:les?\s+)?variation(?:s)?|etude\s+de\s+variation(?:s)?)"
+    r"(?:\s+de)?\s*",
+    re.IGNORECASE,
+)
+VARIATION_VERB_PREFIX_RE = re.compile(
+    r"^\s*(?:etudier|etudiez)\s+les?\s+variations?(?:\s+de)?\s*",
+    re.IGNORECASE,
+)
+VARIATION_TABLE_COMMAND_RE = re.compile(
+    r"^\s*(?:dresser|dressez)\s+le\s+tableau\s+de\s+variation(?:s)?(?:\s+de)?\s*",
+    re.IGNORECASE,
+)
 
 
 class VariationAnalysisError(ValueError):
@@ -58,14 +86,40 @@ def _is_sympy_true(value: object) -> bool:
 
 
 def _normalize_math_text(text: str) -> str:
-    return (
+    normalized = (
         str(text or "")
         .replace("\u2212", "-")
         .replace("\u2013", "-")
         .replace("\u2014", "-")
         .replace("\u03c0", "pi")
         .replace("\u221e", "oo")
+        .replace("\u2019", "'")
     )
+    return "".join(
+        ch for ch in unicodedata.normalize("NFD", normalized)
+        if unicodedata.category(ch) != "Mn"
+    )
+
+
+def _strip_leading_request_phrases(text: str) -> str:
+    candidate = _normalize_math_text(text).strip()
+    if not candidate:
+        return ""
+
+    changed = True
+    while changed and candidate:
+        changed = False
+        for pattern in LEADING_REQUEST_PATTERNS:
+            next_candidate = pattern.sub("", candidate, count=1).strip()
+            if next_candidate != candidate:
+                candidate = next_candidate
+                changed = True
+        for pattern in (VARIATION_VERB_PREFIX_RE, VARIATION_TABLE_COMMAND_RE, VARIATION_PREFIX_RE):
+            next_candidate = pattern.sub("", candidate, count=1).strip()
+            if next_candidate != candidate:
+                candidate = next_candidate
+                changed = True
+    return candidate
 
 
 def _symbol_pool() -> dict[str, sp.Symbol]:
@@ -78,7 +132,7 @@ def _symbol_pool() -> dict[str, sp.Symbol]:
 
 
 def _clean_expression_input(text: str) -> tuple[str, str | None]:
-    raw = _normalize_math_text(text).strip()
+    raw = _strip_leading_request_phrases(text)
     if not raw:
         raise VariationAnalysisError("Expression de fonction manquante.", code="missing_expression")
 
@@ -91,7 +145,7 @@ def _clean_expression_input(text: str) -> tuple[str, str | None]:
         return y_match.group(1).strip(), None
 
     for line in raw.splitlines():
-        candidate_line = line.strip()
+        candidate_line = _strip_leading_request_phrases(line)
         if not candidate_line:
             continue
 

@@ -48,6 +48,20 @@ TRAILING_CONTEXT_RE = re.compile(
     r"\s+(?:dans|sur|avec|alors|puis|ensuite)\b.*$",
     re.IGNORECASE,
 )
+LEADING_REQUEST_PATTERNS = (
+    re.compile(
+        r"^\s*(?:peux(?:\s*-\s*|\s+)tu|pourrais(?:\s*-\s*|\s+)tu|veux(?:\s*-\s*|\s+)tu)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:merci\s+de|s'?il\s+te\s+plait)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|solutionner)\s+",
+        re.IGNORECASE,
+    ),
+)
 
 
 class OdeAnalysisError(ValueError):
@@ -114,6 +128,22 @@ def _normalize_equation_candidate(text: str) -> str:
     return candidate
 
 
+def _strip_leading_request_phrases(text: str) -> str:
+    candidate = _normalize_math_text(text).strip()
+    if not candidate:
+        return ""
+
+    changed = True
+    while changed and candidate:
+        changed = False
+        for pattern in LEADING_REQUEST_PATTERNS:
+            next_candidate = pattern.sub("", candidate, count=1).strip()
+            if next_candidate != candidate:
+                candidate = next_candidate
+                changed = True
+    return candidate
+
+
 def _infer_function_and_variable(candidate: str, hinted_variable: str | None) -> tuple[str, str]:
     fraction_match = FRACTION_DERIVATIVE_RE.search(candidate)
     if fraction_match:
@@ -143,14 +173,14 @@ def _extract_ode_candidate(text: str) -> tuple[str, str, str]:
     hinted_variable = variable_match.group(1).strip() if variable_match else None
 
     for line in raw.splitlines():
-        candidate_line = _normalize_equation_candidate(line)
+        candidate_line = _normalize_equation_candidate(_strip_leading_request_phrases(line))
         if not candidate_line:
             continue
         if "=" in candidate_line:
             function_name, variable_name = _infer_function_and_variable(candidate_line, hinted_variable)
             return candidate_line, function_name, variable_name
 
-    candidate = _normalize_equation_candidate(raw)
+    candidate = _normalize_equation_candidate(_strip_leading_request_phrases(raw))
     if candidate and "=" in candidate:
         function_name, variable_name = _infer_function_and_variable(candidate, hinted_variable)
         return candidate, function_name, variable_name

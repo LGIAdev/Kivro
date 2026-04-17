@@ -46,6 +46,20 @@ TRAILING_CONTEXT_RE = re.compile(
     r"\s+(?:dans|sur|pour|avec|alors|si|puis|ensuite)\b.*$",
     re.IGNORECASE,
 )
+LEADING_REQUEST_PATTERNS = (
+    re.compile(
+        r"^\s*(?:peux(?:\s*-\s*|\s+)tu|pourrais(?:\s*-\s*|\s+)tu|veux(?:\s*-\s*|\s+)tu)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:merci\s+de|s'?il\s+te\s+plait)\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|solutionner)\s+",
+        re.IGNORECASE,
+    ),
+)
 
 
 class EquationAnalysisError(ValueError):
@@ -118,6 +132,22 @@ def _normalize_equation_candidate(text: str) -> str:
     return candidate.strip()
 
 
+def _strip_leading_request_phrases(text: str) -> str:
+    candidate = _normalize_math_text(text).strip()
+    if not candidate:
+        return ""
+
+    changed = True
+    while changed and candidate:
+        changed = False
+        for pattern in LEADING_REQUEST_PATTERNS:
+            next_candidate = pattern.sub("", candidate, count=1).strip()
+            if next_candidate != candidate:
+                candidate = next_candidate
+                changed = True
+    return candidate
+
+
 def _can_parse_equation_member(text: str) -> bool:
     candidate = str(text or "").strip()
     if not candidate or "=" in candidate:
@@ -166,13 +196,13 @@ def _extract_equation_candidate(text: str) -> tuple[str, str | None]:
         raise EquationAnalysisError("Equation manquante.", code="missing_equation")
 
     for line in raw.splitlines():
-        candidate = _normalize_equation_candidate(line)
+        candidate = _normalize_equation_candidate(_strip_leading_request_phrases(line))
         if "=" in candidate:
             compact = _compact_equation_candidate(candidate)
             if compact:
                 return compact, None
 
-    candidate = _normalize_equation_candidate(raw)
+    candidate = _normalize_equation_candidate(_strip_leading_request_phrases(raw))
     if "=" in candidate:
         compact = _compact_equation_candidate(candidate)
         if compact:
