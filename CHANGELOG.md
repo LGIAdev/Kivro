@@ -2,6 +2,24 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.18] - 2026-04-18
+
+### Added
+- Added a more structured deterministic math guidance layer for incomplete or non-parseable local math requests.
+- Added support for Markdown heading levels 4 to 6 in local message rendering.
+
+### Changed
+- Improved the local deterministic router for equations, derivatives, limits, integrals, variations, and ordinary differential equations.
+- Improved parser tolerance for natural French request formulations across the math pipelines.
+- Improved segmented exercise handling for simple numbered sub-questions with lightweight shared context.
+- Improved the frontend/backend contract for deterministic math payloads.
+- Improved the visual layout and consistency of deterministic result cards and specialized math renderers.
+- Updated the visible application version to `Kivrio 2026.4.18`.
+- Updated the README release references and authentication documentation.
+
+### Fixed
+- Fixed raw Markdown heading markers such as `####` remaining visible in model responses.
+
 ## [2026.4.17.1] - 2026-04-18
 
 ### Changed

@@ -15,8 +15,7 @@ Status: project under active development.
 
 ## Releases
 
-- [Kivrio 2026.4.17](releases/Kivrio-2026.4.17.md)
-- [Kivrio 2026.4.15](releases/Kivrio-2026.4.15.md)
+- [Kivrio 2026.4.18](releases/Kivrio-2026.4.18.md)
 - [Kivrio 2026.4.9](releases/Kivrio-2026.4.9.md)
 - [Releases v2026.3.29](releases/v2026.3.29.md)
 - [Releases v2026.3.27.1](releases/v2026.3.27.1.md)
@@ -35,7 +34,6 @@ Status: project under active development.
 - Local Python backend serving both the UI and the API
 - Direct file reading for supported multimodal models
 - Local Pix2Text OCR for image uploads sent to non-multimodal models
-- Deterministic local math tools for variation tables, equations, derivatives, limits, integrals, and ODEs
 
 ---
 

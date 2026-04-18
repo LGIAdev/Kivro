@@ -951,6 +951,9 @@ function renderMarkdown(src){
 
   // 2.3 Titres (#, ##, ###) — tolère espaces en début de ligne
   s = s
+    .replace(/^\s*######\s+(.+)$/gm, '<h6>$1</h6>')
+    .replace(/^\s*#####\s+(.+)$/gm, '<h5>$1</h5>')
+    .replace(/^\s*####\s+(.+)$/gm, '<h4>$1</h4>')
     .replace(/^\s*###\s+(.+)$/gm, '<h3>$1</h3>')
     .replace(/^\s*##\s+(.+)$/gm, '<h2>$1</h2>')
     .replace(/^\s*#\s+(.+)$/gm, '<h1>$1</h1>');

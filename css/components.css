@@ -53,14 +53,24 @@
   .integral-card,
   .derivative-card,
   .limit-card,
-  .ode-card
+  .ode-card,
+  .variation-table-stack
 ){
   display:block;
   width:min(42rem, calc(100vw - 140px));
   max-width:100%;
+  background:rgba(255,255,255,.02);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:14px 16px;
+  box-sizing:border-box;
+}
+.msg .bubble .equation-solve-card{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
 }
 .msg .bubble :is(
-  .equation-solve-card,
   .integral-card,
   .derivative-card,
   .limit-card,
@@ -70,8 +80,27 @@
   flex-direction:column;
   gap:12px;
 }
+.msg .bubble .pipeline-card-title{
+  font-weight:700;
+  font-size:1rem;
+  line-height:1.35;
+  color:var(--text);
+  margin:0;
+}
+.msg .bubble .pipeline-card-note{
+  color:var(--muted);
+  font-size:.92rem;
+  line-height:1.45;
+}
+.msg .bubble .equation-solve-row{
+  display:grid;
+  grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
+  gap:10px 16px;
+  align-items:start;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
 .msg .bubble :is(
-  .equation-solve-row,
   .integral-row,
   .derivative-row,
   .limit-row,
@@ -81,9 +110,22 @@
   grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
   gap:10px 16px;
   align-items:start;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.msg .bubble .equation-solve-row:first-of-type,
+.msg .bubble .integral-row:first-of-type,
+.msg .bubble .derivative-row:first-of-type,
+.msg .bubble .limit-row:first-of-type,
+.msg .bubble .ode-row:first-of-type{
+  padding-top:0;
+  border-top:none;
+}
+.msg .bubble .equation-solve-label{
+  font-weight:600;
+  color:var(--text);
 }
 .msg .bubble :is(
-  .equation-solve-label,
   .integral-label,
   .derivative-label,
   .limit-label,
@@ -92,14 +134,35 @@
   font-weight:600;
   color:var(--text);
 }
+.msg .bubble .equation-solve-value{
+  min-width:0;
+}
 .msg .bubble :is(
-  .equation-solve-value,
   .integral-value,
   .derivative-value,
   .limit-value,
   .ode-value
 ){
   min-width:0;
+}
+.msg .bubble :is(
+  .equation-solve-math,
+  .integral-math,
+  .derivative-math,
+  .limit-math,
+  .ode-math
+){
+  display:block;
+  width:100%;
+}
+.msg .bubble .variation-table-stack{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.msg .bubble .variation-table-panel{
+  display:block;
+  max-width:100%;
 }
 .message-body{
   max-width:100%;

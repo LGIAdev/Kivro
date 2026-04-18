@@ -12,9 +12,9 @@ def _render_math(value: str) -> str:
 
 def _render_row(label: str, value: str) -> str:
     return (
-        '<div class="equation-solve-row">'
-        f'<div class="equation-solve-label">{escape(label)}</div>'
-        f'<div class="equation-solve-value">{_render_math(value)}</div>'
+        '<div class="equation-solve-row pipeline-card-row">'
+        f'<div class="equation-solve-label pipeline-card-label">{escape(label)}</div>'
+        f'<div class="equation-solve-value pipeline-card-value">{_render_math(value)}</div>'
         '</div>'
     )
 
@@ -28,13 +28,17 @@ def build_equation_html(payload: dict) -> str:
         return ""
 
     parts = [
-        '<div class="equation-solve-card">',
-        '<div class="equation-solve-title">Resolution de l\'equation</div>',
-        _render_row("Equation", equation_latex),
+        '<div class="equation-solve-card pipeline-card">',
+        '<div class="equation-solve-title pipeline-card-title">R\u00e9solution de l&#39;\u00e9quation</div>',
+        _render_row("\u00c9quation", equation_latex),
         _render_row("Domaine", domain_latex),
         _render_row("Ensemble solution", f"S = {solution_set_latex}"),
     ]
     if not has_exact_solution:
-        parts.append('<div class="equation-solve-note">Solution approchee par calcul numerique</div>')
+        parts.append(
+            '<div class="equation-solve-note pipeline-card-note">'
+            'Solution approch\u00e9e par calcul num\u00e9rique'
+            '</div>'
+        )
     parts.append('</div>')
     return "".join(parts)

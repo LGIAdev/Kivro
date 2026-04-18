@@ -12,9 +12,9 @@ def _render_math(value: str) -> str:
 
 def _render_row(label: str, value: str) -> str:
     return (
-        '<div class="derivative-row">'
-        f'<div class="derivative-label">{escape(label)}</div>'
-        f'<div class="derivative-value">{_render_math(value)}</div>'
+        '<div class="derivative-row pipeline-card-row">'
+        f'<div class="derivative-label pipeline-card-label">{escape(label)}</div>'
+        f'<div class="derivative-value pipeline-card-value">{_render_math(value)}</div>'
         '</div>'
     )
 
@@ -29,11 +29,11 @@ def build_derivative_html(payload: dict) -> str:
     derivative_result_latex = f"f'({variable}) = {derivative_latex}"
     return "".join(
         [
-            '<div class="derivative-card">',
-            '<div class="derivative-title">Calcul de la derivee</div>',
+            '<div class="derivative-card pipeline-card">',
+            '<div class="derivative-title pipeline-card-title">Calcul de la d\u00e9riv\u00e9e</div>',
             _render_row("Expression", expression_latex),
             _render_row("Variable", variable),
-            _render_row("Derivee", derivative_result_latex),
+            _render_row("D\u00e9riv\u00e9e", derivative_result_latex),
             '</div>',
         ]
     )

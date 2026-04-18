@@ -55,8 +55,13 @@ def build_variation_html(payload: dict) -> str:
     derivative_latex = "f'(x)"
     expression_latex = "f(x)"
 
-    parts = ['<div class="variation-table-stack">']
+    parts = [
+        '<div class="variation-table-stack pipeline-card">',
+        '<div class="variation-table-title pipeline-card-title">Tableau de variations</div>',
+    ]
     for segment in segments:
+        parts.append('<div class="variation-table-panel">')
         parts.append(_render_segment(segment, variable, derivative_latex, expression_latex))
+        parts.append('</div>')
     parts.append("</div>")
     return "".join(parts)

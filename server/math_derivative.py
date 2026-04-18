@@ -55,11 +55,11 @@ LEADING_REQUEST_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"^\s*(?:merci\s+de|s'?il\s+te\s+plait)\s+",
+        r"^\s*(?:merci\s+de(?:\s+bien\s+vouloir)?|veuillez(?:\s+bien)?|s'?il\s+te\s+plait|s'?il\s+vous\s+plait)\s+",
         re.IGNORECASE,
     ),
     re.compile(
-        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|solutionner)\s+",
+        r"^\s*(?:(?:me|moi)\s+)?(?:calculer|calculez|donner|donnez|donne(?:\s*-\s*moi|\s+moi)?|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|solutionner|deriver|derivez)\s+",
         re.IGNORECASE,
     ),
 )

@@ -110,6 +110,8 @@ const INTEGRAL_LOCAL_GUIDANCE_REASONS = new Set([
   'parse_failed',
   'invalid_expression',
   'invalid_bound',
+  'invalid_variable',
+  'ambiguous_variable',
 ]);
 const ODE_LOCAL_GUIDANCE_REASONS = new Set([
   'missing_equation',
@@ -169,6 +171,14 @@ const ODE_LOCAL_GUIDANCE_MESSAGE = [
   '- r\u00e9soudre y\' = y',
   '- \u00e9quation diff\u00e9rentielle y\'\' + y = 0',
   '- solution de y\' + 2y = 3',
+].join('\n');
+const GENERIC_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une op\u00e9ration math\u00e9matique, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- int\u00e9grale de x^2',
+  '- d\u00e9riv\u00e9e de sin(x)',
+  '- r\u00e9soudre x^2 - 4 = 0',
 ].join('\n');
 const getRaw = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
@@ -598,6 +608,51 @@ function looksLikeIntegralRequest(text) {
   return asksIntegral && hasMathContent;
 }
 
+function looksLikeExplanatoryMathRequest(text) {
+  const raw = normalizeEquationIntentProbe(text);
+  if (!raw) return false;
+
+  const asksExplanation =
+    /\bexplique(?:r|z)?\b/.test(raw) ||
+    /\bexplication\b/.test(raw) ||
+    /\bdemontre(?:r|z)?\b/.test(raw) ||
+    /\bdemonstration\b/.test(raw) ||
+    /\bjustifie(?:r|z)?\b/.test(raw) ||
+    /\bcommente(?:r|z)?\b/.test(raw) ||
+    /\bcommentaire\b/.test(raw) ||
+    /\bpourquoi\b/.test(raw);
+
+  if (!asksExplanation) return false;
+
+  const mentionsMath =
+    /=/.test(raw) ||
+    /\b(?:equation|derivee|integrale|primitive|limite|variation|variations|resultat|courbe)\b/.test(raw) ||
+    /[a-z]\s*'\s*(?:\(\s*[a-z]\s*\))?/.test(raw);
+
+  return mentionsMath;
+}
+
+function looksLikeGenericMathGuidanceRequest(text) {
+  const raw = normalizeEquationIntentProbe(text);
+  if (!raw || looksLikeExplanatoryMathRequest(raw)) return false;
+
+  const mentionsKnownMathObject =
+    /\b(?:derivee|integrale|primitive|limite|equation|variation|variations|differentielle|tableau)\b/.test(raw);
+
+  const asksMathOperation =
+    /\b(?:calculer|calculez|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|etudier|etudiez|dresser|dressez|donner|donnez|donne)\b/.test(raw);
+
+  const hasSymbolicMath =
+    /=/.test(raw) ||
+    /->/.test(raw) ||
+    /[a-z]\s*'\s*(?:\(\s*[a-z]\s*\))?/.test(raw) ||
+    /[a-z]\s*\(\s*[a-z]\s*\)/.test(raw) ||
+    /\b(?:sin|cos|tan|exp|ln|log)\s*\(/.test(raw) ||
+    (/\b\d+\b/.test(raw) && /[a-z]/.test(raw));
+
+  return mentionsKnownMathObject || (asksMathOperation && hasSymbolicMath);
+}
+
 function buildEffectiveSystemPrompt(sys, userText) {
   const base = String(sys || '').trim();
   if (!looksLikeVariationTableRequest(userText)) return base;
@@ -695,13 +750,17 @@ function createOdeGuidancePayload() {
   return createLocalGuidancePayload(ODE_LOCAL_GUIDANCE_MESSAGE, 'deterministic-ode-guidance');
 }
 
+function createGenericGuidancePayload() {
+  return createLocalGuidancePayload(GENERIC_LOCAL_GUIDANCE_MESSAGE, 'deterministic-generic-guidance');
+}
+
 function wrapOdeHtml(html) {
   const body = String(html || '').trim();
   if (!body) return '';
   return `${ODE_HTML_OPEN}${body}${ODE_HTML_CLOSE}`;
 }
 
-function createVariationPipelineAttempt({
+function createPipelineAttempt({
   matched = false,
   payload = null,
   rawPayload = null,
@@ -717,477 +776,32 @@ function createVariationPipelineAttempt({
   };
 }
 
-function createEquationPipelineAttempt({
-  matched = false,
-  payload = null,
-  rawPayload = null,
-  fallbackReason = '',
-  fallbackMessage = '',
-} = {}) {
+function extractDeterministicPayloadData(payload) {
+  if (payload?.data && typeof payload.data === 'object') return payload.data;
+  return payload && typeof payload === 'object' ? payload : null;
+}
+
+function readDeterministicFallbackMessage(payload) {
+  return String(payload?.message || payload?.error || '');
+}
+
+function buildDeterministicReplyPayload({ html, pipeline }) {
   return {
-    matched: Boolean(matched),
-    payload: payload || null,
-    rawPayload: rawPayload || null,
-    fallbackReason: String(fallbackReason || ''),
-    fallbackMessage: String(fallbackMessage || ''),
+    answerText: String(html || '').trim(),
+    reasoningText: '',
+    reasoningDurationMs: null,
+    pipeline: String(pipeline || '').trim() || 'deterministic-pipeline',
   };
 }
 
-function createDerivativePipelineAttempt({
-  matched = false,
-  payload = null,
-  rawPayload = null,
-  fallbackReason = '',
-  fallbackMessage = '',
-} = {}) {
-  return {
-    matched: Boolean(matched),
-    payload: payload || null,
-    rawPayload: rawPayload || null,
-    fallbackReason: String(fallbackReason || ''),
-    fallbackMessage: String(fallbackMessage || ''),
-  };
-}
-
-function createLimitPipelineAttempt({
-  matched = false,
-  payload = null,
-  rawPayload = null,
-  fallbackReason = '',
-  fallbackMessage = '',
-} = {}) {
-  return {
-    matched: Boolean(matched),
-    payload: payload || null,
-    rawPayload: rawPayload || null,
-    fallbackReason: String(fallbackReason || ''),
-    fallbackMessage: String(fallbackMessage || ''),
-  };
-}
-
-function createIntegralPipelineAttempt({
-  matched = false,
-  payload = null,
-  rawPayload = null,
-  fallbackReason = '',
-  fallbackMessage = '',
-} = {}) {
-  return {
-    matched: Boolean(matched),
-    payload: payload || null,
-    rawPayload: rawPayload || null,
-    fallbackReason: String(fallbackReason || ''),
-    fallbackMessage: String(fallbackMessage || ''),
-  };
-}
-
-function createOdePipelineAttempt({
-  matched = false,
-  payload = null,
-  rawPayload = null,
-  fallbackReason = '',
-  fallbackMessage = '',
-} = {}) {
-  return {
-    matched: Boolean(matched),
-    payload: payload || null,
-    rawPayload: rawPayload || null,
-    fallbackReason: String(fallbackReason || ''),
-    fallbackMessage: String(fallbackMessage || ''),
-  };
-}
-
-async function requestDeterministicVariationTable(prompt) {
-  if (!looksLikeVariationTableRequest(prompt)) return createVariationPipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/variation-table', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowVariationGuidance(reason)) {
-        return createVariationPipelineAttempt({
-          matched: true,
-          payload: createVariationGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createVariationPipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapVariationTableHtml(payload?.html || '');
-    if (!html) {
-      return createVariationPipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de tableau exploitable.',
-      });
-    }
-    return createVariationPipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-variation'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createVariationPipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-async function requestDeterministicEquationSolve(prompt) {
-  if (!looksLikeEquationSolveRequest(prompt)) return createEquationPipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/equation-solve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowEquationGuidance(reason)) {
-        return createEquationPipelineAttempt({
-          matched: true,
-          payload: createEquationGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createEquationPipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapEquationSolveHtml(payload?.html || '');
-    if (!html) {
-      return createEquationPipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
-      });
-    }
-    return createEquationPipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-equation'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createEquationPipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-async function requestDeterministicDerivative(prompt) {
-  if (!looksLikeDerivativeRequest(prompt)) return createDerivativePipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/derivative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowDerivativeGuidance(reason)) {
-        return createDerivativePipelineAttempt({
-          matched: true,
-          payload: createDerivativeGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createDerivativePipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapDerivativeHtml(payload?.html || '');
-    if (!html) {
-      return createDerivativePipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
-      });
-    }
-    return createDerivativePipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-derivative'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createDerivativePipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-async function requestDeterministicLimit(prompt) {
-  if (!looksLikeLimitRequest(prompt)) return createLimitPipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/limit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowLimitGuidance(reason)) {
-        return createLimitPipelineAttempt({
-          matched: true,
-          payload: createLimitGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createLimitPipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapLimitHtml(payload?.html || '');
-    if (!html) {
-      return createLimitPipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
-      });
-    }
-    return createLimitPipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-limit'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createLimitPipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-async function requestDeterministicIntegral(prompt) {
-  if (!looksLikeIntegralRequest(prompt)) return createIntegralPipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/integral', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowIntegralGuidance(reason)) {
-        return createIntegralPipelineAttempt({
-          matched: true,
-          payload: createIntegralGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createIntegralPipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapIntegralHtml(payload?.html || '');
-    if (!html) {
-      return createIntegralPipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
-      });
-    }
-    return createIntegralPipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-integral'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createIntegralPipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-async function requestDeterministicOde(prompt) {
-  if (!looksLikeOdeRequest(prompt)) return createOdePipelineAttempt();
-
-  try {
-    const res = await fetch('/api/math/ode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: String(prompt || '') }),
-    });
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch (_) {}
-    if (!res.ok) {
-      const reason = String(payload?.reason || `http-${res.status}`);
-      const fallbackMessage = String(payload?.error || '');
-      if (shouldShowOdeGuidance(reason)) {
-        return createOdePipelineAttempt({
-          matched: true,
-          payload: createOdeGuidancePayload(),
-          rawPayload: payload,
-          fallbackReason: reason,
-          fallbackMessage,
-        });
-      }
-      return createOdePipelineAttempt({
-        matched: true,
-        fallbackReason: reason,
-        fallbackMessage,
-      });
-    }
-    const html = wrapOdeHtml(payload?.html || '');
-    if (!html) {
-      return createOdePipelineAttempt({
-        matched: true,
-        fallbackReason: 'missing_html',
-        fallbackMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
-      });
-    }
-    return createOdePipelineAttempt({
-      matched: true,
-      payload: {
-        answerText: html,
-        reasoningText: '',
-        reasoningDurationMs: null,
-        pipeline: String(payload?.pipeline || 'deterministic-ode'),
-      },
-      rawPayload: payload,
-    });
-  } catch (err) {
-    return createOdePipelineAttempt({
-      matched: true,
-      fallbackReason: 'request_failed',
-      fallbackMessage: err?.message || String(err || ''),
-    });
-  }
-}
-
-function logVariationPipelineFallback(attempt) {
+function logDeterministicPipelineFallback(label, attempt) {
   if (!attempt?.matched || attempt?.payload) return;
   const reason = attempt.fallbackReason || 'analysis_failed';
   const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[variation-table] fallback vers le pipeline modele: ${reason}${details}`);
+  console.info(`[${label}] fallback vers le pipeline modele: ${reason}${details}`);
 }
 
-function logEquationPipelineFallback(attempt) {
-  if (!attempt?.matched || attempt?.payload) return;
-  const reason = attempt.fallbackReason || 'analysis_failed';
-  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[equation-solve] fallback vers le pipeline modele: ${reason}${details}`);
-}
-
-function logDerivativePipelineFallback(attempt) {
-  if (!attempt?.matched || attempt?.payload) return;
-  const reason = attempt.fallbackReason || 'analysis_failed';
-  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[derivative] fallback vers le pipeline modele: ${reason}${details}`);
-}
-
-function logLimitPipelineFallback(attempt) {
-  if (!attempt?.matched || attempt?.payload) return;
-  const reason = attempt.fallbackReason || 'analysis_failed';
-  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[limit] fallback vers le pipeline modele: ${reason}${details}`);
-}
-
-function logIntegralPipelineFallback(attempt) {
-  if (!attempt?.matched || attempt?.payload) return;
-  const reason = attempt.fallbackReason || 'analysis_failed';
-  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[integral] fallback vers le pipeline modele: ${reason}${details}`);
-}
-
-function logOdePipelineFallback(attempt) {
-  if (!attempt?.matched || attempt?.payload) return;
-  const reason = attempt.fallbackReason || 'analysis_failed';
-  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
-  console.info(`[ode] fallback vers le pipeline modele: ${reason}${details}`);
-}
-
-async function renderDeterministicVariationReply({ conversationId, targetBubble, payload, model }) {
+async function renderDeterministicReply({ conversationId, targetBubble, payload, model }) {
   let bubble = targetBubble;
   if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
   else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
@@ -1205,94 +819,186 @@ async function renderDeterministicVariationReply({ conversationId, targetBubble,
   return bubble;
 }
 
-async function renderDeterministicEquationReply({ conversationId, targetBubble, payload, model }) {
-  let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
+async function requestDeterministicPipeline(prompt, spec) {
+  if (!spec?.looksLikeRequest?.(prompt)) return createPipelineAttempt();
 
-  if (conversationId) {
-    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
-      reasoningText: '',
-      model,
-      reasoningDurationMs: null,
+  try {
+    const res = await fetch(spec.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: String(prompt || '') }),
     });
-    bindMessageRecord(bubble, savedAssistantMessage);
-  }
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch (_) {}
 
-  try { await mountHistory(); } catch (_) {}
-  return bubble;
+    if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = readDeterministicFallbackMessage(payload);
+      const payloadStatus = String(payload?.status || '').trim().toLowerCase();
+      const shouldUseGuidance = payloadStatus === 'guidance'
+        || (!payloadStatus && spec.shouldShowGuidance(reason));
+      if (shouldUseGuidance) {
+        return createPipelineAttempt({
+          matched: true,
+          payload: spec.createGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
+      return createPipelineAttempt({
+        matched: true,
+        rawPayload: payload,
+        fallbackReason: reason,
+        fallbackMessage,
+      });
+    }
+
+    const responseData = extractDeterministicPayloadData(payload);
+    const html = spec.wrapHtml(responseData?.html || payload?.html || '');
+    if (!html) {
+      return createPipelineAttempt({
+        matched: true,
+        rawPayload: payload,
+        fallbackReason: 'missing_html',
+        fallbackMessage: spec.missingHtmlMessage,
+      });
+    }
+
+    return createPipelineAttempt({
+      matched: true,
+      payload: buildDeterministicReplyPayload({
+        html,
+        pipeline: String(payload?.pipeline || responseData?.pipeline || spec.pipeline),
+      }),
+      rawPayload: payload,
+    });
+  } catch (err) {
+    return createPipelineAttempt({
+      matched: true,
+      fallbackReason: 'request_failed',
+      fallbackMessage: err?.message || String(err || ''),
+    });
+  }
 }
 
-async function renderDeterministicDerivativeReply({ conversationId, targetBubble, payload, model }) {
-  let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
+const VARIATION_PIPELINE_SPEC = {
+  label: 'variation-table',
+  pipeline: 'deterministic-variation',
+  endpoint: '/api/math/variation-table',
+  looksLikeRequest: looksLikeVariationTableRequest,
+  shouldShowGuidance: shouldShowVariationGuidance,
+  createGuidancePayload: createVariationGuidancePayload,
+  wrapHtml: wrapVariationTableHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de tableau exploitable.',
+};
 
-  if (conversationId) {
-    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
-      reasoningText: '',
-      model,
-      reasoningDurationMs: null,
-    });
-    bindMessageRecord(bubble, savedAssistantMessage);
+const EQUATION_PIPELINE_SPEC = {
+  label: 'equation-solve',
+  pipeline: 'deterministic-equation',
+  endpoint: '/api/math/equation-solve',
+  looksLikeRequest: looksLikeEquationSolveRequest,
+  shouldShowGuidance: shouldShowEquationGuidance,
+  createGuidancePayload: createEquationGuidancePayload,
+  wrapHtml: wrapEquationSolveHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const ODE_PIPELINE_SPEC = {
+  label: 'ode',
+  pipeline: 'deterministic-ode',
+  endpoint: '/api/math/ode',
+  looksLikeRequest: looksLikeOdeRequest,
+  shouldShowGuidance: shouldShowOdeGuidance,
+  createGuidancePayload: createOdeGuidancePayload,
+  wrapHtml: wrapOdeHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const DERIVATIVE_PIPELINE_SPEC = {
+  label: 'derivative',
+  pipeline: 'deterministic-derivative',
+  endpoint: '/api/math/derivative',
+  looksLikeRequest: looksLikeDerivativeRequest,
+  shouldShowGuidance: shouldShowDerivativeGuidance,
+  createGuidancePayload: createDerivativeGuidancePayload,
+  wrapHtml: wrapDerivativeHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const LIMIT_PIPELINE_SPEC = {
+  label: 'limit',
+  pipeline: 'deterministic-limit',
+  endpoint: '/api/math/limit',
+  looksLikeRequest: looksLikeLimitRequest,
+  shouldShowGuidance: shouldShowLimitGuidance,
+  createGuidancePayload: createLimitGuidancePayload,
+  wrapHtml: wrapLimitHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const INTEGRAL_PIPELINE_SPEC = {
+  label: 'integral',
+  pipeline: 'deterministic-integral',
+  endpoint: '/api/math/integral',
+  looksLikeRequest: looksLikeIntegralRequest,
+  shouldShowGuidance: shouldShowIntegralGuidance,
+  createGuidancePayload: createIntegralGuidancePayload,
+  wrapHtml: wrapIntegralHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const DETERMINISTIC_PIPELINE_SPECS = [
+  VARIATION_PIPELINE_SPEC,
+  EQUATION_PIPELINE_SPEC,
+  ODE_PIPELINE_SPEC,
+  DERIVATIVE_PIPELINE_SPEC,
+  LIMIT_PIPELINE_SPEC,
+  INTEGRAL_PIPELINE_SPEC,
+];
+
+async function resolveDeterministicPipeline(prompt) {
+  if (looksLikeExplanatoryMathRequest(prompt)) return { handled: false, attempt: null, spec: null, payload: null };
+
+  for (const spec of DETERMINISTIC_PIPELINE_SPECS) {
+    const attempt = await requestDeterministicPipeline(prompt, spec);
+    if (attempt.payload) {
+      return { handled: true, attempt, spec, payload: attempt.payload };
+    }
+    logDeterministicPipelineFallback(spec.label, attempt);
   }
 
-  try { await mountHistory(); } catch (_) {}
-  return bubble;
+  if (looksLikeGenericMathGuidanceRequest(prompt)) {
+    const payload = createGenericGuidancePayload();
+    return {
+      handled: true,
+      payload,
+      spec: null,
+      attempt: createPipelineAttempt({
+        matched: true,
+        payload,
+        fallbackReason: 'generic_guidance',
+      }),
+    };
+  }
+
+  return { handled: false, attempt: null, spec: null, payload: null };
 }
 
-async function renderDeterministicLimitReply({ conversationId, targetBubble, payload, model }) {
-  let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
+async function attemptDeterministicPipelineChain({ prompt, conversationId, targetBubble, model }) {
+  let bubble = targetBubble || null;
+  const result = await resolveDeterministicPipeline(prompt);
+  if (!result.handled || !result.payload) return { handled: false, bubble, ...result };
 
-  if (conversationId) {
-    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
-      reasoningText: '',
-      model,
-      reasoningDurationMs: null,
-    });
-    bindMessageRecord(bubble, savedAssistantMessage);
-  }
-
-  try { await mountHistory(); } catch (_) {}
-  return bubble;
-}
-
-async function renderDeterministicIntegralReply({ conversationId, targetBubble, payload, model }) {
-  let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
-
-  if (conversationId) {
-    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
-      reasoningText: '',
-      model,
-      reasoningDurationMs: null,
-    });
-    bindMessageRecord(bubble, savedAssistantMessage);
-  }
-
-  try { await mountHistory(); } catch (_) {}
-  return bubble;
-}
-
-async function renderDeterministicOdeReply({ conversationId, targetBubble, payload, model }) {
-  let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
-
-  if (conversationId) {
-    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
-      reasoningText: '',
-      model,
-      reasoningDurationMs: null,
-    });
-    bindMessageRecord(bubble, savedAssistantMessage);
-  }
-
-  try { await mountHistory(); } catch (_) {}
-  return bubble;
+  bubble = await renderDeterministicReply({
+    conversationId,
+    targetBubble: bubble,
+    payload: result.payload,
+    model,
+  });
+  return { handled: true, bubble, ...result };
 }
 
 function extractExplicitQuestionBlocks(text) {
@@ -1323,14 +1029,30 @@ function segmentContainsFunctionExpression(text) {
   return /(?:[a-zA-Z]\w*\s*\(\s*[a-zA-Z]\s*\)\s*=|\by\s*=)/.test(String(text || ''));
 }
 
+function buildSegmentPrompt(exercise, segment) {
+  return [exercise?.preamble, segment?.body].filter(Boolean).join('\n\n').trim();
+}
+
 function buildSegmentVariationProbeText(exercise, segment) {
-  return [exercise?.preamble, segment?.raw].filter(Boolean).join('\n\n').trim();
+  return buildSegmentPrompt(exercise, segment);
 }
 
 function buildSegmentVariationPrompt(exercise, segment) {
-  const scoped = buildSegmentVariationProbeText(exercise, segment);
+  const scoped = buildSegmentPrompt(exercise, segment);
   if (segmentContainsFunctionExpression(scoped)) return scoped;
   return String(exercise?.source || scoped || '').trim();
+}
+
+function looksLikeDeterministicSegmentCandidate(prompt) {
+  const text = String(prompt || '');
+  return DETERMINISTIC_PIPELINE_SPECS.some((spec) => spec.looksLikeRequest(text))
+    || looksLikeGenericMathGuidanceRequest(text)
+    || looksLikeExplanatoryMathRequest(text);
+}
+
+function shouldUseSegmentedExerciseRouting(exercise) {
+  if (!exercise?.segments?.length) return false;
+  return exercise.segments.some((segment) => looksLikeDeterministicSegmentCandidate(buildSegmentPrompt(exercise, segment)));
 }
 
 function latexToPlainMath(value) {
@@ -1346,7 +1068,7 @@ function latexToPlainMath(value) {
 }
 
 function buildVariationContextSummary(rawPayload) {
-  const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : null;
+  const payload = extractDeterministicPayloadData(rawPayload);
   const segments = Array.isArray(payload?.segments) ? payload.segments : [];
   if (!segments.length) return 'Un tableau de variation deterministe a ete calcule.';
 
@@ -1417,14 +1139,7 @@ async function collectModelBlockAnswer({ base, model, sys, prompt }) {
 async function attemptSegmentedExerciseReply({ content, conversationId, targetBubble, base, model, sys }) {
   const exercise = extractExplicitQuestionBlocks(content);
   if (!exercise) return null;
-
-  const variationIndexes = exercise.segments
-    .map((segment, index) => (
-      looksLikeVariationTableRequest(buildSegmentVariationProbeText(exercise, segment)) ? index : -1
-    ))
-    .filter((index) => index >= 0);
-
-  if (!variationIndexes.length) return null;
+  if (!shouldUseSegmentedExerciseRouting(exercise)) return null;
 
   let bubble = targetBubble;
   let combinedAnswer = '';
@@ -1432,19 +1147,23 @@ async function attemptSegmentedExerciseReply({ content, conversationId, targetBu
 
   for (let index = 0; index < exercise.segments.length; index += 1) {
     const segment = exercise.segments[index];
+    const segmentPrompt = buildSegmentPrompt(exercise, segment);
     const variationPrompt = buildSegmentVariationPrompt(exercise, segment);
-    const wantsDeterministicVariation = variationIndexes.includes(index);
+    const deterministicPrompt =
+      looksLikeVariationTableRequest(buildSegmentVariationProbeText(exercise, segment))
+        ? variationPrompt
+        : segmentPrompt;
 
     let sectionAnswer = '';
     let contextText = '';
 
-    if (wantsDeterministicVariation) {
-      const variationAttempt = await requestDeterministicVariationTable(variationPrompt);
-      if (variationAttempt.payload) {
-        sectionAnswer = variationAttempt.payload.answerText;
-        contextText = buildVariationContextSummary(variationAttempt.rawPayload);
+    const deterministicResult = await resolveDeterministicPipeline(deterministicPrompt);
+    if (deterministicResult.handled && deterministicResult.payload) {
+      sectionAnswer = deterministicResult.payload.answerText;
+      if (deterministicResult.spec?.pipeline === VARIATION_PIPELINE_SPEC.pipeline) {
+        contextText = buildVariationContextSummary(deterministicResult.attempt?.rawPayload);
       } else {
-        logVariationPipelineFallback(variationAttempt);
+        contextText = sectionAnswer;
       }
     }
 
@@ -1731,77 +1450,16 @@ export async function regenerateFromEditedMessage({ conversationId, messageId, c
       return Store.get(conversationId) || conversation;
     }
 
-    const variationAttempt = await requestDeterministicVariationTable(lastMessage.content);
-    if (variationAttempt.payload) {
-      aiB = await renderDeterministicVariationReply({
-        conversationId,
-        targetBubble: null,
-        payload: variationAttempt.payload,
-        model,
-      });
+    const deterministicReply = await attemptDeterministicPipelineChain({
+      prompt: lastMessage.content,
+      conversationId,
+      targetBubble: null,
+      model,
+    });
+    if (deterministicReply.handled) {
+      aiB = deterministicReply.bubble;
       return Store.get(conversationId) || conversation;
     }
-    logVariationPipelineFallback(variationAttempt);
-
-    const equationAttempt = await requestDeterministicEquationSolve(lastMessage.content);
-    if (equationAttempt.payload) {
-      aiB = await renderDeterministicEquationReply({
-        conversationId,
-        targetBubble: null,
-        payload: equationAttempt.payload,
-        model,
-      });
-      return Store.get(conversationId) || conversation;
-    }
-    logEquationPipelineFallback(equationAttempt);
-
-    const odeAttempt = await requestDeterministicOde(lastMessage.content);
-    if (odeAttempt.payload) {
-      aiB = await renderDeterministicOdeReply({
-        conversationId,
-        targetBubble: null,
-        payload: odeAttempt.payload,
-        model,
-      });
-      return Store.get(conversationId) || conversation;
-    }
-    logOdePipelineFallback(odeAttempt);
-
-    const derivativeAttempt = await requestDeterministicDerivative(lastMessage.content);
-    if (derivativeAttempt.payload) {
-      aiB = await renderDeterministicDerivativeReply({
-        conversationId,
-        targetBubble: null,
-        payload: derivativeAttempt.payload,
-        model,
-      });
-      return Store.get(conversationId) || conversation;
-    }
-    logDerivativePipelineFallback(derivativeAttempt);
-
-    const limitAttempt = await requestDeterministicLimit(lastMessage.content);
-    if (limitAttempt.payload) {
-      aiB = await renderDeterministicLimitReply({
-        conversationId,
-        targetBubble: null,
-        payload: limitAttempt.payload,
-        model,
-      });
-      return Store.get(conversationId) || conversation;
-    }
-    logLimitPipelineFallback(limitAttempt);
-
-    const integralAttempt = await requestDeterministicIntegral(lastMessage.content);
-    if (integralAttempt.payload) {
-      aiB = await renderDeterministicIntegralReply({
-        conversationId,
-        targetBubble: null,
-        payload: integralAttempt.payload,
-        model,
-      });
-      return Store.get(conversationId) || conversation;
-    }
-    logIntegralPipelineFallback(integralAttempt);
 
     aiB = renderMsg('assistant', '', { model });
     const assistantState = createAssistantStreamState();
@@ -1989,8 +1647,8 @@ export async function sendCurrent() {
     } catch (_) {}
 
     const deterministicPrompt = prepared.promptText || text;
-    const canUseDeterministicVariation = !prepared.imagePayloads?.length && detachedUploads.length === 0;
-    if (canUseDeterministicVariation) {
+    const canUseDeterministicPipelines = !prepared.imagePayloads?.length && detachedUploads.length === 0;
+    if (canUseDeterministicPipelines) {
       const segmentedReply = await attemptSegmentedExerciseReply({
         content: deterministicPrompt,
         conversationId: convId,
@@ -2003,77 +1661,16 @@ export async function sendCurrent() {
         return;
       }
 
-      const variationAttempt = await requestDeterministicVariationTable(deterministicPrompt);
-      if (variationAttempt.payload) {
-        aiB = await renderDeterministicVariationReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: variationAttempt.payload,
-          model,
-        });
+      const deterministicReply = await attemptDeterministicPipelineChain({
+        prompt: deterministicPrompt,
+        conversationId: convId,
+        targetBubble: aiB,
+        model,
+      });
+      if (deterministicReply.handled) {
+        aiB = deterministicReply.bubble;
         return;
       }
-      logVariationPipelineFallback(variationAttempt);
-
-      const equationAttempt = await requestDeterministicEquationSolve(deterministicPrompt);
-      if (equationAttempt.payload) {
-        aiB = await renderDeterministicEquationReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: equationAttempt.payload,
-          model,
-        });
-        return;
-      }
-      logEquationPipelineFallback(equationAttempt);
-
-      const odeAttempt = await requestDeterministicOde(deterministicPrompt);
-      if (odeAttempt.payload) {
-        aiB = await renderDeterministicOdeReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: odeAttempt.payload,
-          model,
-        });
-        return;
-      }
-      logOdePipelineFallback(odeAttempt);
-
-      const derivativeAttempt = await requestDeterministicDerivative(deterministicPrompt);
-      if (derivativeAttempt.payload) {
-        aiB = await renderDeterministicDerivativeReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: derivativeAttempt.payload,
-          model,
-        });
-        return;
-      }
-      logDerivativePipelineFallback(derivativeAttempt);
-
-      const limitAttempt = await requestDeterministicLimit(deterministicPrompt);
-      if (limitAttempt.payload) {
-        aiB = await renderDeterministicLimitReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: limitAttempt.payload,
-          model,
-        });
-        return;
-      }
-      logLimitPipelineFallback(limitAttempt);
-
-      const integralAttempt = await requestDeterministicIntegral(deterministicPrompt);
-      if (integralAttempt.payload) {
-        aiB = await renderDeterministicIntegralReply({
-          conversationId: convId,
-          targetBubble: aiB,
-          payload: integralAttempt.payload,
-          model,
-        });
-        return;
-      }
-      logIntegralPipelineFallback(integralAttempt);
     }
 
     if (!aiB) aiB = renderMsg('assistant', '', { model });

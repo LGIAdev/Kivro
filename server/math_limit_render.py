@@ -12,9 +12,9 @@ def _render_math(value: str) -> str:
 
 def _render_row(label: str, value: str) -> str:
     return (
-        '<div class="limit-row">'
-        f'<div class="limit-label">{escape(label)}</div>'
-        f'<div class="limit-value">{_render_math(value)}</div>'
+        '<div class="limit-row pipeline-card-row">'
+        f'<div class="limit-label pipeline-card-label">{escape(label)}</div>'
+        f'<div class="limit-value pipeline-card-value">{_render_math(value)}</div>'
         '</div>'
     )
 
@@ -28,8 +28,8 @@ def build_limit_html(payload: dict) -> str:
 
     return "".join(
         [
-            '<div class="limit-card">',
-            '<div class="limit-title">Calcul de la limite</div>',
+            '<div class="limit-card pipeline-card">',
+            '<div class="limit-title pipeline-card-title">Calcul de la limite</div>',
             _render_row("Expression", expression_latex),
             _render_row("Point", target_latex),
             _render_row("Limite", limit_statement_latex),

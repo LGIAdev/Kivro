@@ -12,9 +12,9 @@ def _render_math(value: str) -> str:
 
 def _render_row(label: str, value: str) -> str:
     return (
-        '<div class="integral-row">'
-        f'<div class="integral-label">{escape(label)}</div>'
-        f'<div class="integral-value">{_render_math(value)}</div>'
+        '<div class="integral-row pipeline-card-row">'
+        f'<div class="integral-label pipeline-card-label">{escape(label)}</div>'
+        f'<div class="integral-value pipeline-card-value">{_render_math(value)}</div>'
         '</div>'
     )
 
@@ -30,13 +30,13 @@ def build_integral_html(payload: dict) -> str:
         return ""
 
     parts = [
-        '<div class="integral-card">',
-        '<div class="integral-title">Calcul de l\'integrale</div>',
+        '<div class="integral-card pipeline-card">',
+        '<div class="integral-title pipeline-card-title">Calcul de l&#39;int\u00e9grale</div>',
         _render_row("Expression", expression_latex),
         _render_row("Variable", variable),
     ]
     if is_definite and lower_latex and upper_latex:
         parts.append(_render_row("Bornes", rf"[{lower_latex}, {upper_latex}]"))
-    parts.append(_render_row("Resultat", statement_latex))
+    parts.append(_render_row("R\u00e9sultat", statement_latex))
     parts.append('</div>')
     return "".join(parts)
