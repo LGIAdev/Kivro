@@ -2,6 +2,13 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.17.1] - 2026-04-18
+
+### Changed
+- Improved the width of deterministic math result cards in the chat interface.
+- Improved the internal layout of equation, integral, derivative, limit, and ordinary differential equation result cards so labels and values use the available width more effectively.
+- Preserved the existing layout of regular LLM response bubbles.
+
 ## [2026.4.17] - 2026-04-17
 
 ### Added

@@ -48,6 +48,59 @@
   box-sizing:border-box;
 }
 .msg.user .bubble{ background:transparent; border-style:dashed; }
+.msg .bubble :is(
+  .equation-solve-card,
+  .integral-card,
+  .derivative-card,
+  .limit-card,
+  .ode-card
+){
+  display:block;
+  width:min(42rem, calc(100vw - 140px));
+  max-width:100%;
+}
+.msg .bubble :is(
+  .equation-solve-card,
+  .integral-card,
+  .derivative-card,
+  .limit-card,
+  .ode-card
+){
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.msg .bubble :is(
+  .equation-solve-row,
+  .integral-row,
+  .derivative-row,
+  .limit-row,
+  .ode-row
+){
+  display:grid;
+  grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
+  gap:10px 16px;
+  align-items:start;
+}
+.msg .bubble :is(
+  .equation-solve-label,
+  .integral-label,
+  .derivative-label,
+  .limit-label,
+  .ode-label
+){
+  font-weight:600;
+  color:var(--text);
+}
+.msg .bubble :is(
+  .equation-solve-value,
+  .integral-value,
+  .derivative-value,
+  .limit-value,
+  .ode-value
+){
+  min-width:0;
+}
 .message-body{
   max-width:100%;
   display:inline-flex;
