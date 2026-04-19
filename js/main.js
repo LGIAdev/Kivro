@@ -336,6 +336,11 @@ function wireSidebarResize() {
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   const auth = await initAuthGate();
+
+  // A blank startup screen must not silently keep the previous conversation active.
+  try { if (typeof Store?.clearCurrent === 'function') Store.clearCurrent(); } catch (_) {}
+  state.currentConvId = null;
+
   if (auth.authenticated) {
     try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
   }
@@ -352,9 +357,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireEnsureConversationAtFirstPromptDelegated();
   startChatLogObserver();
 
-  const currentId = Store.currentId?.() || null;
-  if (auth.authenticated && currentId) {
-    try { await Store.ensureLoaded(currentId); } catch (_) {}
-  }
-  state.awaitingFirstPrompt = !hasCurrentConversation();
+  state.awaitingFirstPrompt = true;
 });

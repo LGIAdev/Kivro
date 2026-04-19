@@ -178,12 +178,39 @@ def _trim_equation_member(candidate: str, *, from_left: bool) -> str:
     return text if _can_parse_equation_member(text) else ""
 
 
+def _has_unknown_leading_word_prefix(candidate: str) -> bool:
+    text = str(candidate or "").strip()
+    if not text:
+        return False
+
+    tokens = text.split()
+    if len(tokens) <= 1:
+        return False
+
+    first = str(tokens[0] or "").strip().lower()
+    if not re.fullmatch(r"[A-Za-z]{2,}", first):
+        return False
+    if first in ALLOWED_NAMES:
+        return False
+
+    remainder = " ".join(tokens[1:]).strip()
+    if not remainder:
+        return False
+    return _can_parse_equation_member(remainder)
+
+
 def _compact_equation_candidate(candidate: str) -> str:
     parts = str(candidate or "").split("=", 1)
     if len(parts) != 2:
         return ""
 
-    left = _trim_equation_member(parts[0], from_left=True)
+    left_source = parts[0].strip()
+    if _has_unknown_leading_word_prefix(left_source):
+        return ""
+    if not _can_parse_equation_member(left_source):
+        return ""
+
+    left = left_source
     right = _trim_equation_member(parts[1], from_left=False)
     if not left or not right:
         return ""

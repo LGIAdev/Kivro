@@ -2,6 +2,13 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.18.1] - 2026-04-19
+
+### Fixed
+- Fixed startup conversation state so a blank interface no longer silently reuses the previously active conversation.
+- Fixed equation routing so arbitrary leading words now trigger local guidance instead of unintended equation resolution.
+- Fixed derivative routing so arbitrary leading words now trigger local guidance instead of unintended derivative resolution.
+
 ## [2026.4.18] - 2026-04-18
 
 ### Added

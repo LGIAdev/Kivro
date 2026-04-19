@@ -138,6 +138,19 @@ def _strip_leading_request_phrases(text: str) -> str:
     return candidate
 
 
+def _looks_like_derivative_request(candidate: str) -> bool:
+    text = _normalize_math_text(candidate).strip()
+    if not text:
+        return False
+    if FUNCTION_IN_TEXT_RE.search(text):
+        return True
+    if DERIVATIVE_PREFIX_RE.match(text):
+        return True
+    if DERIVATIVE_SYMBOL_PREFIX_RE.match(text):
+        return True
+    return False
+
+
 def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
     raw = _normalize_math_text(text).strip()
     if not raw:
@@ -149,6 +162,8 @@ def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
     for line in raw.splitlines():
         candidate_line = _strip_leading_request_phrases(line)
         if not candidate_line:
+            continue
+        if not _looks_like_derivative_request(candidate_line):
             continue
 
         function_match = FUNCTION_IN_TEXT_RE.search(candidate_line)
@@ -162,7 +177,11 @@ def _extract_derivative_candidate(text: str) -> tuple[str, str | None]:
         if expr:
             return expr, hinted_variable
 
-    expr = _normalize_expression_candidate(_strip_leading_request_phrases(raw))
+    stripped_raw = _strip_leading_request_phrases(raw)
+    if not _looks_like_derivative_request(stripped_raw):
+        raise DerivativeAnalysisError("Aucune expression exploitable n'a ete detectee.", code="missing_expression")
+
+    expr = _normalize_expression_candidate(stripped_raw)
     if expr:
         return expr, hinted_variable
 
