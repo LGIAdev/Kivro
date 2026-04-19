@@ -67,6 +67,7 @@ PUBLIC_STATIC_FILES = {'/index.html'}
 PUBLIC_STATIC_PREFIXES = ('/css/', '/js/', '/assets/')
 SESSIONS: dict[str, float] = {}
 SESSIONS_LOCK = threading.Lock()
+LOOPBACK_HOSTS = {'127.0.0.1', 'localhost', '::1'}
 ALLOWED_UPLOADS = {
     '.jpg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
     '.jpeg': ('image/jpeg', MAX_IMAGE_BYTES, 'image'),
@@ -163,6 +164,19 @@ def build_math_failure_payload(*, pipeline: str, exc: Exception) -> dict:
         'error': message,
         'data': None,
     }
+
+
+def normalize_host_port(value: str | None) -> tuple[str | None, int | None]:
+    raw = str(value or '').strip()
+    if not raw:
+        return None, None
+    parsed = urlparse(raw if '://' in raw else f'//{raw}')
+    host = str(parsed.hostname or '').strip().lower() or None
+    return host, parsed.port
+
+
+def is_loopback_host(host: str | None) -> bool:
+    return str(host or '').strip().lower() in LOOPBACK_HOSTS
 
 
 def purge_expired_sessions() -> None:
@@ -377,6 +391,39 @@ class KivrioHandler(SimpleHTTPRequestHandler):
         self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Authentication required.')
         return False
 
+    def is_trusted_mutating_request(self) -> bool:
+        sec_fetch_site = str(self.headers.get('Sec-Fetch-Site') or '').strip().lower()
+        if sec_fetch_site and sec_fetch_site not in {'same-origin', 'same-site', 'none'}:
+            return False
+
+        request_host_raw = str(self.headers.get('Host') or '').strip()
+        request_host, request_port = normalize_host_port(request_host_raw)
+        if request_host is None:
+            return True
+
+        for header_name in ('Origin', 'Referer'):
+            raw = str(self.headers.get(header_name) or '').strip()
+            if not raw:
+                continue
+            parsed = urlparse(raw)
+            if parsed.scheme not in {'http', 'https'}:
+                return False
+
+            origin_host, origin_port = normalize_host_port(parsed.netloc)
+            if origin_host is None:
+                return False
+            if parsed.netloc.lower() == request_host_raw.lower():
+                continue
+            if (
+                is_loopback_host(origin_host)
+                and is_loopback_host(request_host)
+                and (origin_port is None or request_port is None or origin_port == request_port)
+            ):
+                continue
+            return False
+
+        return True
+
     def build_session_cookie(self, token: str, *, clear: bool = False) -> str:
         parts = [f'{SESSION_COOKIE_NAME}={token}']
         parts.append('Path=/')
@@ -435,6 +482,11 @@ class KivrioHandler(SimpleHTTPRequestHandler):
 
     def handle_api(self, method: str, path: str) -> None:
         try:
+            if method in {'POST', 'PATCH', 'DELETE'} and path.startswith('/api/'):
+                if not self.is_trusted_mutating_request():
+                    self.send_error_json(HTTPStatus.FORBIDDEN, 'Cross-origin request blocked.')
+                    return
+
             if method == 'GET' and path == '/api/health':
                 self.send_json({'ok': True, 'db': 'ready'})
                 return
@@ -599,7 +651,8 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                     self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
                     return
                 absolute = (ROOT_DIR / storage_path).resolve()
-                if ROOT_DIR.resolve() not in absolute.parents:
+                uploads_root = db.UPLOADS_DIR.resolve()
+                if absolute != uploads_root and uploads_root not in absolute.parents:
                     self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
                     return
                 self.send_file_response(

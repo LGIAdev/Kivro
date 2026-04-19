@@ -803,8 +803,8 @@ function logDeterministicPipelineFallback(label, attempt) {
 
 async function renderDeterministicReply({ conversationId, targetBubble, payload, model }) {
   let bubble = targetBubble;
-  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true });
-  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true });
+  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true, allowSpecializedHtml: true });
+  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true, allowSpecializedHtml: true });
 
   if (conversationId) {
     const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
@@ -1091,6 +1091,94 @@ function buildVariationContextSummary(rawPayload) {
   return `Tableau de variation determine : ${pieces.join(' | ')}`;
 }
 
+function buildEquationContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const equation = latexToPlainMath(payload?.equationLatex || '');
+  const domain = latexToPlainMath(payload?.domainLatex || '');
+  const solution = latexToPlainMath(payload?.solutionSetLatex || '');
+  const lines = [];
+  if (equation) lines.push(`Equation : ${equation}`);
+  if (domain) lines.push(`Domaine : ${domain}`);
+  if (solution) lines.push(`Ensemble solution : S = ${solution}`);
+  return lines.join('\n') || 'Une equation a ete resolue par le pipeline deterministe.';
+}
+
+function buildDerivativeContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const derivative = latexToPlainMath(payload?.derivativeLatex || '');
+  const lines = [];
+  if (expression) lines.push(`Expression : ${expression}`);
+  lines.push(`Variable : ${variable}`);
+  if (derivative) lines.push(`Derivee : f'(${variable}) = ${derivative}`);
+  return lines.join('\n') || 'Une derivee a ete calculee par le pipeline deterministe.';
+}
+
+function buildLimitContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const statement = latexToPlainMath(payload?.limitStatementLatex || '');
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const target = latexToPlainMath(payload?.targetLatex || '');
+  const value = latexToPlainMath(payload?.limitLatex || '');
+  const lines = [];
+  if (statement) lines.push(`Limite : ${statement}`);
+  else {
+    if (expression) lines.push(`Expression : ${expression}`);
+    if (target) lines.push(`Point : ${target}`);
+    if (value) lines.push(`Valeur de la limite : ${value}`);
+  }
+  return lines.join('\n') || 'Une limite a ete calculee par le pipeline deterministe.';
+}
+
+function buildIntegralContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const statement = latexToPlainMath(payload?.integralStatementLatex || '');
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const lower = latexToPlainMath(payload?.lowerBoundLatex || '');
+  const upper = latexToPlainMath(payload?.upperBoundLatex || '');
+  const lines = [];
+  if (expression) lines.push(`Expression : ${expression}`);
+  lines.push(`Variable : ${variable}`);
+  if (payload?.isDefinite && lower && upper) lines.push(`Bornes : [${lower}, ${upper}]`);
+  if (statement) lines.push(`Resultat : ${statement}`);
+  return lines.join('\n') || 'Une integrale a ete calculee par le pipeline deterministe.';
+}
+
+function buildOdeContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const equation = latexToPlainMath(payload?.equationLatex || '');
+  const functionLatex = latexToPlainMath(payload?.functionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const solution = latexToPlainMath(payload?.solutionLatex || '');
+  const lines = [];
+  if (equation) lines.push(`Equation : ${equation}`);
+  if (functionLatex) lines.push(`Inconnue : ${functionLatex}`);
+  lines.push(`Variable : ${variable}`);
+  if (solution) lines.push(`Solution : ${solution}`);
+  return lines.join('\n') || 'Une equation differentielle a ete resolue par le pipeline deterministe.';
+}
+
+function buildDeterministicContextSummary(spec, rawPayload) {
+  switch (spec?.pipeline) {
+    case VARIATION_PIPELINE_SPEC.pipeline:
+      return buildVariationContextSummary(rawPayload);
+    case EQUATION_PIPELINE_SPEC.pipeline:
+      return buildEquationContextSummary(rawPayload);
+    case DERIVATIVE_PIPELINE_SPEC.pipeline:
+      return buildDerivativeContextSummary(rawPayload);
+    case LIMIT_PIPELINE_SPEC.pipeline:
+      return buildLimitContextSummary(rawPayload);
+    case INTEGRAL_PIPELINE_SPEC.pipeline:
+      return buildIntegralContextSummary(rawPayload);
+    case ODE_PIPELINE_SPEC.pipeline:
+      return buildOdeContextSummary(rawPayload);
+    default:
+      return 'Une sous-question a ete traitee par le pipeline deterministe.';
+  }
+}
+
 function buildSegmentModelPrompt({ exercise, segmentIndex, resolvedSegments }) {
   const segment = exercise?.segments?.[segmentIndex];
   if (!segment) return '';
@@ -1159,12 +1247,11 @@ async function attemptSegmentedExerciseReply({ content, conversationId, targetBu
 
     const deterministicResult = await resolveDeterministicPipeline(deterministicPrompt);
     if (deterministicResult.handled && deterministicResult.payload) {
-      sectionAnswer = deterministicResult.payload.answerText;
-      if (deterministicResult.spec?.pipeline === VARIATION_PIPELINE_SPEC.pipeline) {
-        contextText = buildVariationContextSummary(deterministicResult.attempt?.rawPayload);
-      } else {
-        contextText = sectionAnswer;
-      }
+      contextText = buildDeterministicContextSummary(
+        deterministicResult.spec,
+        deterministicResult.attempt?.rawPayload,
+      );
+      sectionAnswer = contextText;
     }
 
     if (!sectionAnswer) {

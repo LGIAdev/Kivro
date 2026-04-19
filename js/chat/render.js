@@ -72,7 +72,7 @@ function saveEmbeddedVariationHtml(source, saveVariationTable){
   if (!source) return '';
   return String(source).replace(
     /<variation-table-html>([\s\S]*?)<\/variation-table-html>/gi,
-    (_, html) => saveVariationTable(String(html || '').trim()),
+    (_, html) => saveVariationTable(sanitizeSpecializedHtmlFragment(html)),
   );
 }
 
@@ -84,7 +84,7 @@ function saveEmbeddedEquationHtml(source, saveEquationSolve){
   if (!source) return '';
   return String(source).replace(
     /<equation-solve-html>([\s\S]*?)<\/equation-solve-html>/gi,
-    (_, html) => saveEquationSolve(String(html || '').trim()),
+    (_, html) => saveEquationSolve(sanitizeSpecializedHtmlFragment(html)),
   );
 }
 
@@ -96,7 +96,7 @@ function saveEmbeddedDerivativeHtml(source, saveDerivative){
   if (!source) return '';
   return String(source).replace(
     /<derivative-html>([\s\S]*?)<\/derivative-html>/gi,
-    (_, html) => saveDerivative(String(html || '').trim()),
+    (_, html) => saveDerivative(sanitizeSpecializedHtmlFragment(html)),
   );
 }
 
@@ -108,7 +108,7 @@ function saveEmbeddedLimitHtml(source, saveLimit){
   if (!source) return '';
   return String(source).replace(
     /<limit-html>([\s\S]*?)<\/limit-html>/gi,
-    (_, html) => saveLimit(String(html || '').trim()),
+    (_, html) => saveLimit(sanitizeSpecializedHtmlFragment(html)),
   );
 }
 
@@ -120,7 +120,7 @@ function saveEmbeddedIntegralHtml(source, saveIntegral){
   if (!source) return '';
   return String(source).replace(
     /<integral-html>([\s\S]*?)<\/integral-html>/gi,
-    (_, html) => saveIntegral(String(html || '').trim()),
+    (_, html) => saveIntegral(sanitizeSpecializedHtmlFragment(html)),
   );
 }
 
@@ -132,9 +132,21 @@ function saveEmbeddedOdeHtml(source, saveOde){
   if (!source) return '';
   return String(source).replace(
     /<ode-html>([\s\S]*?)<\/ode-html>/gi,
-    (_, html) => saveOde(String(html || '').trim()),
+    (_, html) => saveOde(sanitizeSpecializedHtmlFragment(html)),
   );
 }
+
+function sanitizeSpecializedHtmlFragment(source){
+  let html = String(source || '').trim();
+  if (!html) return '';
+  html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+  html = html.replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  html = html.replace(/\s(?:href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\1/gi, '');
+  html = html.replace(/\s(?:href|src)\s*=\s*javascript:[^\s>]+/gi, '');
+  return html.trim();
+}
+
+const SPECIALIZED_HTML_ONLY_RE = /^\s*(?:<variation-table-html>[\s\S]*<\/variation-table-html>|<equation-solve-html>[\s\S]*<\/equation-solve-html>|<derivative-html>[\s\S]*<\/derivative-html>|<limit-html>[\s\S]*<\/limit-html>|<integral-html>[\s\S]*<\/integral-html>|<ode-html>[\s\S]*<\/ode-html>)\s*$/i;
 
 function isPythonFenceLanguage(lang){
   return ['python', 'py', 'pyodide'].includes(String(lang || '').toLowerCase());
@@ -863,10 +875,11 @@ function convertGfmTablesToHtml(text){
  *  - Convertit uniquement ce qui nous intéresse (titres, listes, quotes, emphase, code inline, paragraphes).
  *  - Rend un conteneur `<div class="markdown-body">...</div>`.
  */
-function renderMarkdown(src){
+function renderMarkdown(src, options = {}){
   if(!src) return '';
 
   let s = String(src);
+  const allowSpecializedHtml = options.allowSpecializedHtml === true || SPECIALIZED_HTML_ONLY_RE.test(s);
   
   // Oriente d'abord les tableaux LaTeX vers le rendu adapte
 
@@ -933,12 +946,14 @@ function renderMarkdown(src){
   });
 
   // 2.2 Échapper le HTML restant
-  s = saveEmbeddedVariationHtml(s, saveVariationTable);
-  s = saveEmbeddedEquationHtml(s, saveEquationSolve);
-  s = saveEmbeddedDerivativeHtml(s, saveDerivative);
-  s = saveEmbeddedLimitHtml(s, saveLimit);
-  s = saveEmbeddedIntegralHtml(s, saveIntegral);
-  s = saveEmbeddedOdeHtml(s, saveOde);
+  if (allowSpecializedHtml) {
+    s = saveEmbeddedVariationHtml(s, saveVariationTable);
+    s = saveEmbeddedEquationHtml(s, saveEquationSolve);
+    s = saveEmbeddedDerivativeHtml(s, saveDerivative);
+    s = saveEmbeddedLimitHtml(s, saveLimit);
+    s = saveEmbeddedIntegralHtml(s, saveIntegral);
+    s = saveEmbeddedOdeHtml(s, saveOde);
+  }
   s = transformLatexTables(s);
   s = normalizeLatex(s);
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, saveMath);
@@ -1083,10 +1098,10 @@ function formatReasoningDuration(durationMs){
   return `en ${parts.join(' ')}`;
 }
 
-function renderMarkdownBlock(container, text){
+function renderMarkdownBlock(container, text, options = {}){
   const content = String(text || '').trim();
   if (!content) return false;
-  container.innerHTML = renderMarkdown(content);
+  container.innerHTML = renderMarkdown(content, options);
   return true;
 }
 
@@ -1318,7 +1333,7 @@ export function updateBubbleContent(container, role, text, options = {}){
 
       const panel = document.createElement('div');
       panel.className = 'assistant-reasoning-panel';
-      renderMarkdownBlock(panel, payload.reasoningText);
+      renderMarkdownBlock(panel, payload.reasoningText, { allowSpecializedHtml: false });
 
       toggle.addEventListener('click', () => {
         const next = toggle.getAttribute('aria-expanded') !== 'true';
@@ -1333,7 +1348,7 @@ export function updateBubbleContent(container, role, text, options = {}){
 
       const answerWrap = document.createElement('div');
       answerWrap.className = 'assistant-answer';
-      if (renderMarkdownBlock(answerWrap, payload.answerText)) {
+      if (renderMarkdownBlock(answerWrap, payload.answerText, { allowSpecializedHtml: options.allowSpecializedHtml === true })) {
         if (options.pyodideFinal !== false) hydratePyodideBlocks(answerWrap);
         group.appendChild(answerWrap);
       }
@@ -1345,7 +1360,7 @@ export function updateBubbleContent(container, role, text, options = {}){
       return;
     }
 
-    if (renderMarkdownBlock(container, payload.answerText)) {
+    if (renderMarkdownBlock(container, payload.answerText, { allowSpecializedHtml: options.allowSpecializedHtml === true })) {
       if (options.pyodideFinal !== false) hydratePyodideBlocks(container);
       appendMessageAttachments(container, options.attachments || []);
       renderMathBlocks(container);
