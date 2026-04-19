@@ -1,5 +1,3 @@
-# Kivrio 2026.4.15
-
 ## What's Changed
 
 - Added deterministic local math tools for variation tables, equation solving, derivatives, limits, integrals, and ordinary differential equations.

@@ -1,5 +1,3 @@
-# Kivrio 2026.4.9
-
 ## What's Changed
 
 - Secured the local API with session authentication and removed public exposure of internal backend and database files.

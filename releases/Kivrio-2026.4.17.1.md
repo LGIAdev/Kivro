@@ -1,5 +1,3 @@
-# Kivrio 2026.4.17.1
-
 ## What's Changed
 
 - Improved the width of deterministic math result cards in the chat interface.

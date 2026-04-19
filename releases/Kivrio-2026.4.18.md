@@ -1,5 +1,3 @@
-# Kivrio 2026.4.18
-
 ## What's Changed
 
 - Improved the deterministic math routing layer so local equation, derivative, limit, integral, variation, and ODE requests are handled more consistently.

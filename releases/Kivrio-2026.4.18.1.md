@@ -1,5 +1,3 @@
-# Kivrio 2026.4.18.1
-
 ## What's Changed
 
 - Fixed startup conversation state so a blank interface no longer silently reuses the previously active conversation.

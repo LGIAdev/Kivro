@@ -1,5 +1,3 @@
-# Kivrio 2026.4.17
-
 ## What's Changed
 
 - Improved the local math router so derivative, limit, equation, variation, integral, and ODE requests tolerate more natural French formulations.
