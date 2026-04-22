@@ -3,7 +3,7 @@
 import { initTheme } from './core/theme.js';
 import { wireUserMenu, wirePromptModal, wireSettingsModal } from './ui/menus.js';
 import { wireSendAction, mountStatusPill } from './ui/actions.js';
-import { wireLogout } from './auth/logout.js';
+import { initAuthGate, wireLogout } from './auth/logout.js';
 import { wireUploads } from './features/uploads.js';
 import { regenerateFromEditedMessage } from './net/ollama.js';
 import('./features/math/katex-init.js')
@@ -335,7 +335,15 @@ function wireSidebarResize() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
-  try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
+  const auth = await initAuthGate();
+
+  // A blank startup screen must not silently keep the previous conversation active.
+  try { if (typeof Store?.clearCurrent === 'function') Store.clearCurrent(); } catch (_) {}
+  state.currentConvId = null;
+
+  if (auth.authenticated) {
+    try { await mountHistory(); } catch (e) { console.warn('[mountHistory] failed', e); }
+  }
   wireUserMenu();
   wirePromptModal();
   wireSettingsModal();
@@ -349,9 +357,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireEnsureConversationAtFirstPromptDelegated();
   startChatLogObserver();
 
-  const currentId = Store.currentId?.() || null;
-  if (currentId) {
-    try { await Store.ensureLoaded(currentId); } catch (_) {}
-  }
-  state.awaitingFirstPrompt = !hasCurrentConversation();
+  state.awaitingFirstPrompt = true;
 });

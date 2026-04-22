@@ -48,6 +48,122 @@
   box-sizing:border-box;
 }
 .msg.user .bubble{ background:transparent; border-style:dashed; }
+.msg .bubble :is(
+  .equation-solve-card,
+  .integral-card,
+  .derivative-card,
+  .limit-card,
+  .ode-card,
+  .variation-table-stack
+){
+  display:block;
+  width:min(42rem, calc(100vw - 140px));
+  max-width:100%;
+  background:rgba(255,255,255,.02);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:14px 16px;
+  box-sizing:border-box;
+}
+.msg .bubble .equation-solve-card{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.msg .bubble :is(
+  .integral-card,
+  .derivative-card,
+  .limit-card,
+  .ode-card
+){
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.msg .bubble .pipeline-card-title{
+  font-weight:700;
+  font-size:1rem;
+  line-height:1.35;
+  color:var(--text);
+  margin:0;
+}
+.msg .bubble .pipeline-card-note{
+  color:var(--muted);
+  font-size:.92rem;
+  line-height:1.45;
+}
+.msg .bubble .equation-solve-row{
+  display:grid;
+  grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
+  gap:10px 16px;
+  align-items:start;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.msg .bubble :is(
+  .integral-row,
+  .derivative-row,
+  .limit-row,
+  .ode-row
+){
+  display:grid;
+  grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
+  gap:10px 16px;
+  align-items:start;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.msg .bubble .equation-solve-row:first-of-type,
+.msg .bubble .integral-row:first-of-type,
+.msg .bubble .derivative-row:first-of-type,
+.msg .bubble .limit-row:first-of-type,
+.msg .bubble .ode-row:first-of-type{
+  padding-top:0;
+  border-top:none;
+}
+.msg .bubble .equation-solve-label{
+  font-weight:600;
+  color:var(--text);
+}
+.msg .bubble :is(
+  .integral-label,
+  .derivative-label,
+  .limit-label,
+  .ode-label
+){
+  font-weight:600;
+  color:var(--text);
+}
+.msg .bubble .equation-solve-value{
+  min-width:0;
+}
+.msg .bubble :is(
+  .integral-value,
+  .derivative-value,
+  .limit-value,
+  .ode-value
+){
+  min-width:0;
+}
+.msg .bubble :is(
+  .equation-solve-math,
+  .integral-math,
+  .derivative-math,
+  .limit-math,
+  .ode-math
+){
+  display:block;
+  width:100%;
+}
+.msg .bubble .variation-table-stack{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.msg .bubble .variation-table-panel{
+  display:block;
+  max-width:100%;
+}
 .message-body{
   max-width:100%;
   display:inline-flex;
@@ -602,6 +718,70 @@
   word-break:normal;         /* privilegie les retours sur les espaces */
   overflow-wrap:break-word;  /* casse seulement en dernier recours */
   hyphens:none;
+}
+
+.msg .bubble table.variation-table{
+  width:max-content;
+  min-width:max-content;
+  table-layout:auto;
+}
+
+.msg .bubble table.variation-table th,
+.msg .bubble table.variation-table td{
+  width:auto;
+  min-width:clamp(4.75rem, 7vw, 6.5rem);
+  padding:10px 12px;
+  text-align:center;
+  vertical-align:middle;
+  white-space:nowrap;
+  overflow-wrap:normal;
+  word-break:normal;
+  hyphens:none;
+}
+
+.msg .bubble table.variation-table .variation-label{
+  min-width:clamp(8rem, 11vw, 11rem);
+  text-align:center;
+  font-weight:700;
+}
+
+.msg .bubble table.variation-table .variation-axis-point,
+.msg .bubble table.variation-table .variation-value-point{
+  min-width:clamp(5.25rem, 8vw, 7rem);
+}
+
+.msg .bubble table.variation-table .variation-axis-gap,
+.msg .bubble table.variation-table .variation-interval,
+.msg .bubble table.variation-table .variation-point-marker{
+  min-width:clamp(3rem, 4vw, 4.25rem);
+  padding-inline:8px;
+}
+
+.msg .bubble table.variation-table .variation-sign-cell{
+  font-weight:700;
+}
+
+.msg .bubble table.variation-table .variation-arrow-cell{
+  background:rgba(255,255,255,.02);
+}
+
+.msg .bubble table.variation-table .variation-math,
+.msg .bubble table.variation-table .variation-text,
+.msg .bubble table.variation-table .variation-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:1.25rem;
+}
+
+.msg .bubble table.variation-table .variation-arrow-cell .variation-math{
+  font-size:1.25rem;
+  line-height:1;
+}
+
+.msg .bubble table.variation-table .variation-row-function td{
+  padding-top:14px;
+  padding-bottom:14px;
 }
 /* Conserver le nowrap uniquement pour les formules KaTeX (rendu stable) */
 .msg .bubble .katex .base,

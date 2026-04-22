@@ -64,6 +64,90 @@ function restoreCodeToken(token){
   return '';
 }
 
+function restoreVariationTableToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedVariationHtml(source, saveVariationTable){
+  if (!source) return '';
+  return String(source).replace(
+    /<variation-table-html>([\s\S]*?)<\/variation-table-html>/gi,
+    (_, html) => saveVariationTable(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function restoreEquationSolveToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedEquationHtml(source, saveEquationSolve){
+  if (!source) return '';
+  return String(source).replace(
+    /<equation-solve-html>([\s\S]*?)<\/equation-solve-html>/gi,
+    (_, html) => saveEquationSolve(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function restoreDerivativeToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedDerivativeHtml(source, saveDerivative){
+  if (!source) return '';
+  return String(source).replace(
+    /<derivative-html>([\s\S]*?)<\/derivative-html>/gi,
+    (_, html) => saveDerivative(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function restoreLimitToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedLimitHtml(source, saveLimit){
+  if (!source) return '';
+  return String(source).replace(
+    /<limit-html>([\s\S]*?)<\/limit-html>/gi,
+    (_, html) => saveLimit(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function restoreIntegralToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedIntegralHtml(source, saveIntegral){
+  if (!source) return '';
+  return String(source).replace(
+    /<integral-html>([\s\S]*?)<\/integral-html>/gi,
+    (_, html) => saveIntegral(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function restoreOdeToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedOdeHtml(source, saveOde){
+  if (!source) return '';
+  return String(source).replace(
+    /<ode-html>([\s\S]*?)<\/ode-html>/gi,
+    (_, html) => saveOde(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
+function sanitizeSpecializedHtmlFragment(source){
+  let html = String(source || '').trim();
+  if (!html) return '';
+  html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+  html = html.replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  html = html.replace(/\s(?:href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\1/gi, '');
+  html = html.replace(/\s(?:href|src)\s*=\s*javascript:[^\s>]+/gi, '');
+  return html.trim();
+}
+
+const SPECIALIZED_HTML_ONLY_RE = /^\s*(?:<variation-table-html>[\s\S]*<\/variation-table-html>|<equation-solve-html>[\s\S]*<\/equation-solve-html>|<derivative-html>[\s\S]*<\/derivative-html>|<limit-html>[\s\S]*<\/limit-html>|<integral-html>[\s\S]*<\/integral-html>|<ode-html>[\s\S]*<\/ode-html>)\s*$/i;
+
 function isPythonFenceLanguage(lang){
   return ['python', 'py', 'pyodide'].includes(String(lang || '').toLowerCase());
 }
@@ -642,42 +726,76 @@ function openImageViewer(src, alt, trigger){
   state.closeButton.focus();
 }
 
-// LaTeX array/tabular → Markdown GFM (texte)
-function latexArrayToGfm(s){
-  if(!s) return '';
-  // Traite \[...\] ou $$...$$
-  return String(s)
-    // $$...$$ → GFM
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => toGfmIfArray(inner))
-    // \[...\] → GFM
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => toGfmIfArray(inner));
+function normalizeTableCellText(value){
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
 
-  function toGfmIfArray(inner){
-    const m = inner.match(/\\begin\{(array|tabular)\}(\{[^}]*\})?([\s\S]*?)\\end\{\1\}/);
-    if(!m) return `\n\\[${inner}\\]\n`; // pas un tableau → on restitue tel quel
-    const body = m[3]
-      .replace(/\\hline/g,'')      // ignore \hline
-      .trim();
-
-    // Lignes LaTeX séparées par "\\"
-    const rows = body.split(/\\\\/).map(r => r.trim()).filter(Boolean);
-    const parsed = rows.map(r => r.split('&').map(c => c.trim()));
-
-    const maxCols = Math.max(...parsed.map(r => r.length));
-    parsed.forEach(r => { while(r.length < maxCols) r.push(''); });
-
-    const header = parsed[0];
-    const sep = Array(maxCols).fill('---');
-    const bodyRows = parsed.slice(1);
-
-    const gfm = [
-      `| ${header.join(' | ')} |`,
-      `| ${sep.join(' | ')} |`,
-      ...bodyRows.map(r => `| ${r.join(' | ')} |`)
-    ].join('\n');
-
-    return `\n${gfm}\n`; // retourne **du texte** GFM
+function stripWrappedMathDelimiters(value){
+  let text = normalizeTableCellText(value);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (text.startsWith('\\(') && text.endsWith('\\)')) {
+      text = text.slice(2, -2).trim();
+      changed = true;
+    } else if (text.startsWith('\\[') && text.endsWith('\\]')) {
+      text = text.slice(2, -2).trim();
+      changed = true;
+    } else if (text.startsWith('$$') && text.endsWith('$$')) {
+      text = text.slice(2, -2).trim();
+      changed = true;
+    } else if (text.startsWith('$') && text.endsWith('$')) {
+      text = text.slice(1, -1).trim();
+      changed = true;
+    }
   }
+  return text;
+}
+
+function parseLatexTableBlock(inner){
+  const match = String(inner || '').match(/\\begin\{(array|tabular)\}(\{[^}]*\})?([\s\S]*?)\\end\{\1\}/);
+  if (!match) return null;
+  const rows = match[3]
+    .replace(/\\hline/g, '')
+    .split(/\\\\/)
+    .map(row => row.trim())
+    .filter(Boolean)
+    .map(row => row.split('&').map(cell => cell.trim()));
+  return rows.length ? padTableRows(rows) : null;
+}
+
+function padTableRows(rows){
+  const maxCols = Math.max(0, ...rows.map(row => row.length));
+  return rows.map(row => {
+    const next = row.slice();
+    while (next.length < maxCols) next.push('');
+    return next;
+  });
+}
+
+function rowsToGfm(rows){
+  if (!rows || !rows.length) return '';
+  const paddedRows = padTableRows(rows);
+  const header = paddedRows[0];
+  const sep = Array(header.length).fill('---');
+  return [
+    `| ${header.join(' | ')} |`,
+    `| ${sep.join(' | ')} |`,
+    ...paddedRows.slice(1).map(row => `| ${row.join(' | ')} |`)
+  ].join('\n');
+}
+
+function transformLatexTables(source){
+  if (!source) return '';
+  const transformBlock = (match, inner) => {
+    const rows = parseLatexTableBlock(inner);
+    if (!rows) return match;
+    return `\n${rowsToGfm(rows)}\n`;
+  };
+
+  return String(source)
+    .replace(/\$\$([\s\S]*?)\$\$/g, transformBlock)
+    .replace(/\\\[([\s\S]*?)\\\]/g, transformBlock);
 }
 
 // --- GFM tables → HTML ---
@@ -702,7 +820,7 @@ function parseAlign(sepCells){
 }
 
 function buildTableHTML(headerCells, bodyRows, align){
-  let html = '<table class="var-table markdown-table"><thead><tr>';
+  let html = '<table class="markdown-table"><thead><tr>';
   for(let i=0;i<headerCells.length;i++){
     const a = align[i] || '';
     const style = a ? ` style="text-align:${a}"` : '';
@@ -757,16 +875,23 @@ function convertGfmTablesToHtml(text){
  *  - Convertit uniquement ce qui nous intéresse (titres, listes, quotes, emphase, code inline, paragraphes).
  *  - Rend un conteneur `<div class="markdown-body">...</div>`.
  */
-function renderMarkdown(src){
+function renderMarkdown(src, options = {}){
   if(!src) return '';
 
   let s = String(src);
+  const allowSpecializedHtml = options.allowSpecializedHtml === true || SPECIALIZED_HTML_ONLY_RE.test(s);
   
-  // Convertit d’abord les tableaux LaTeX en GFM (texte)
+  // Oriente d'abord les tableaux LaTeX vers le rendu adapte
 
   // 2.1 Sauvegarde provisoire: maths (\(...\), \[...\], $$...$$) et fences ```...```
   const codeTokens = [];
   const mathTokens = [];
+  const variationTableTokens = [];
+  const equationSolveTokens = [];
+  const derivativeTokens = [];
+  const limitTokens = [];
+  const integralTokens = [];
+  const odeTokens = [];
   const saveCode = (token) => {
     const marker = `@@CODE_${codeTokens.length}@@`;
     codeTokens.push(token);
@@ -775,6 +900,36 @@ function renderMarkdown(src){
   const saveMath = (token) => {
     const marker = `@@MATH_${mathTokens.length}@@`;
     mathTokens.push(token);
+    return marker;
+  };
+  const saveVariationTable = (token) => {
+    const marker = `@@VAR_TABLE_${variationTableTokens.length}@@`;
+    variationTableTokens.push(token);
+    return marker;
+  };
+  const saveEquationSolve = (token) => {
+    const marker = `@@EQ_SOLVE_${equationSolveTokens.length}@@`;
+    equationSolveTokens.push(token);
+    return marker;
+  };
+  const saveDerivative = (token) => {
+    const marker = `@@DERIVATIVE_${derivativeTokens.length}@@`;
+    derivativeTokens.push(token);
+    return marker;
+  };
+  const saveLimit = (token) => {
+    const marker = `@@LIMIT_${limitTokens.length}@@`;
+    limitTokens.push(token);
+    return marker;
+  };
+  const saveIntegral = (token) => {
+    const marker = `@@INTEGRAL_${integralTokens.length}@@`;
+    integralTokens.push(token);
+    return marker;
+  };
+  const saveOde = (token) => {
+    const marker = `@@ODE_${odeTokens.length}@@`;
+    odeTokens.push(token);
     return marker;
   };
 
@@ -791,7 +946,15 @@ function renderMarkdown(src){
   });
 
   // 2.2 Échapper le HTML restant
-  s = latexArrayToGfm(s);
+  if (allowSpecializedHtml) {
+    s = saveEmbeddedVariationHtml(s, saveVariationTable);
+    s = saveEmbeddedEquationHtml(s, saveEquationSolve);
+    s = saveEmbeddedDerivativeHtml(s, saveDerivative);
+    s = saveEmbeddedLimitHtml(s, saveLimit);
+    s = saveEmbeddedIntegralHtml(s, saveIntegral);
+    s = saveEmbeddedOdeHtml(s, saveOde);
+  }
+  s = transformLatexTables(s);
   s = normalizeLatex(s);
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, saveMath);
   s = s.replace(/\\\[([\s\S]*?)\\\]/g, saveMath);
@@ -803,6 +966,9 @@ function renderMarkdown(src){
 
   // 2.3 Titres (#, ##, ###) — tolère espaces en début de ligne
   s = s
+    .replace(/^\s*######\s+(.+)$/gm, '<h6>$1</h6>')
+    .replace(/^\s*#####\s+(.+)$/gm, '<h5>$1</h5>')
+    .replace(/^\s*####\s+(.+)$/gm, '<h4>$1</h4>')
     .replace(/^\s*###\s+(.+)$/gm, '<h3>$1</h3>')
     .replace(/^\s*##\s+(.+)$/gm, '<h2>$1</h2>')
     .replace(/^\s*#\s+(.+)$/gm, '<h1>$1</h1>');
@@ -831,7 +997,7 @@ function renderMarkdown(src){
     .replace(/`([^`\n]+)`/g, '<code>$1</code>');
 		
   // 2.7 Paragraphes : regrouper ce qui n'est pas déjà un bloc HTML connu
-  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@(?:CODE|MATH)_)/;
+  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@(?:CODE|MATH|VAR_TABLE|EQ_SOLVE|DERIVATIVE|LIMIT|INTEGRAL|ODE)_)/;
   s = s
     .split(/\n{2,}/)
     .map(chunk => {
@@ -844,6 +1010,12 @@ function renderMarkdown(src){
   // 2.8 Réinsertion des tokens (maths + fences)
   s = s.replace(/@@MATH_(\d+)@@/g, (_, i)=> restoreMathToken(mathTokens[Number(i)]));
   s = s.replace(/@@CODE_(\d+)@@/g, (_, i)=> restoreCodeToken(codeTokens[Number(i)]));
+  s = s.replace(/@@VAR_TABLE_(\d+)@@/g, (_, i)=> restoreVariationTableToken(variationTableTokens[Number(i)]));
+  s = s.replace(/@@EQ_SOLVE_(\d+)@@/g, (_, i)=> restoreEquationSolveToken(equationSolveTokens[Number(i)]));
+  s = s.replace(/@@DERIVATIVE_(\d+)@@/g, (_, i)=> restoreDerivativeToken(derivativeTokens[Number(i)]));
+  s = s.replace(/@@LIMIT_(\d+)@@/g, (_, i)=> restoreLimitToken(limitTokens[Number(i)]));
+  s = s.replace(/@@INTEGRAL_(\d+)@@/g, (_, i)=> restoreIntegralToken(integralTokens[Number(i)]));
+  s = s.replace(/@@ODE_(\d+)@@/g, (_, i)=> restoreOdeToken(odeTokens[Number(i)]));
 
   return `<div class="markdown-body">${s}</div>`;
 }
@@ -926,10 +1098,10 @@ function formatReasoningDuration(durationMs){
   return `en ${parts.join(' ')}`;
 }
 
-function renderMarkdownBlock(container, text){
+function renderMarkdownBlock(container, text, options = {}){
   const content = String(text || '').trim();
   if (!content) return false;
-  container.innerHTML = renderMarkdown(content);
+  container.innerHTML = renderMarkdown(content, options);
   return true;
 }
 
@@ -1161,7 +1333,7 @@ export function updateBubbleContent(container, role, text, options = {}){
 
       const panel = document.createElement('div');
       panel.className = 'assistant-reasoning-panel';
-      renderMarkdownBlock(panel, payload.reasoningText);
+      renderMarkdownBlock(panel, payload.reasoningText, { allowSpecializedHtml: false });
 
       toggle.addEventListener('click', () => {
         const next = toggle.getAttribute('aria-expanded') !== 'true';
@@ -1176,7 +1348,7 @@ export function updateBubbleContent(container, role, text, options = {}){
 
       const answerWrap = document.createElement('div');
       answerWrap.className = 'assistant-answer';
-      if (renderMarkdownBlock(answerWrap, payload.answerText)) {
+      if (renderMarkdownBlock(answerWrap, payload.answerText, { allowSpecializedHtml: options.allowSpecializedHtml === true })) {
         if (options.pyodideFinal !== false) hydratePyodideBlocks(answerWrap);
         group.appendChild(answerWrap);
       }
@@ -1188,7 +1360,7 @@ export function updateBubbleContent(container, role, text, options = {}){
       return;
     }
 
-    if (renderMarkdownBlock(container, payload.answerText)) {
+    if (renderMarkdownBlock(container, payload.answerText, { allowSpecializedHtml: options.allowSpecializedHtml === true })) {
       if (options.pyodideFinal !== false) hydratePyodideBlocks(container);
       appendMessageAttachments(container, options.attachments || []);
       renderMathBlocks(container);

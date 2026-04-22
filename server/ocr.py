@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -49,16 +51,49 @@ def build_runtime_env() -> dict[str, str]:
     return env
 
 
-def resolve_runtime_python() -> Path:
-    candidates = [
+def current_python_supports_pix2text() -> bool:
+    try:
+        return importlib.util.find_spec('pix2text') is not None
+    except Exception:
+        return False
+
+
+def runtime_python_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    override = str(os.environ.get('KIVRIO_OCR_PYTHON') or '').strip()
+    if override:
+        candidates.append(Path(override).expanduser())
+
+    candidates.extend([
         RUNTIME_DIR / 'python.exe',
         RUNTIME_DIR / 'python',
-    ]
+        RUNTIME_DIR / 'bin' / 'python3',
+        RUNTIME_DIR / 'bin' / 'python',
+    ])
+
+    if current_python_supports_pix2text():
+        current_python = Path(sys.executable).expanduser() if sys.executable else None
+        if current_python is not None:
+            candidates.append(current_python)
+
+    unique_candidates: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def resolve_runtime_python() -> Path:
+    candidates = runtime_python_candidates()
     for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise RuntimeError(
-        'Runtime Pix2Text introuvable. Ajoutez Python dans ocr/pix2text/runtime avant d utiliser l OCR.',
+        'Runtime Pix2Text introuvable. Ajoutez Python dans ocr/pix2text/runtime, ou definissez KIVRIO_OCR_PYTHON avant d utiliser l OCR.',
     )
 
 

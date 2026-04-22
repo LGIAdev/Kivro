@@ -10,7 +10,7 @@ Older versions may not receive security updates.
 If you discover a security vulnerability in Kivrio:
 
 1. **Do not open a public issue.**
-2. Instead, send a private report to: **[your email / security contact]**
+2. Instead, send a private report to: **contact@lg-ia-researchlab.fr**
 3. Include:
    - A clear description of the issue
    - Steps to reproduce
@@ -21,7 +21,7 @@ If you discover a security vulnerability in Kivrio:
 
 ## Response Process
 - We will acknowledge receipt of your report within **7 days**.
-- We aim to investigate and provide a fix or mitigation within **14–30 days**.
+- We aim to investigate and provide a fix or mitigation within **14-30 days**.
 - Once resolved, we will publish a new release and mention the fix in the release notes.
 
 ---

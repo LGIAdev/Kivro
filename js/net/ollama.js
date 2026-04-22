@@ -51,6 +51,135 @@ const GENERATE_ANSWER_PATHS = [
 let isSendInFlight = false;
 let systemPrompt = '';
 let systemPromptLoadPromise = null;
+const VARIATION_FALLBACK_GUIDANCE = [
+  'Pour une etude de variations, privilegie une explication mathematique claire et fiable.',
+  'Si tu ne peux pas fournir un tableau de variation strictement structure, reponds en texte plutot que d inventer un faux tableau de type Lycee.',
+  'Quand c est utile, donne les intervalles de croissance et de decroissance, les extrema et le signe de la derivee dans l explication.',
+  ].join('\n');
+  const VARIATION_TABLE_HTML_OPEN = '<variation-table-html>';
+  const VARIATION_TABLE_HTML_CLOSE = '</variation-table-html>';
+  const EQUATION_SOLVE_HTML_OPEN = '<equation-solve-html>';
+  const EQUATION_SOLVE_HTML_CLOSE = '</equation-solve-html>';
+  const DERIVATIVE_HTML_OPEN = '<derivative-html>';
+const DERIVATIVE_HTML_CLOSE = '</derivative-html>';
+const LIMIT_HTML_OPEN = '<limit-html>';
+const LIMIT_HTML_CLOSE = '</limit-html>';
+const INTEGRAL_HTML_OPEN = '<integral-html>';
+const INTEGRAL_HTML_CLOSE = '</integral-html>';
+const ODE_HTML_OPEN = '<ode-html>';
+const ODE_HTML_CLOSE = '</ode-html>';
+const VARIATION_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_variable',
+  'ambiguous_variable',
+  'constant_expression',
+  'missing_study_interval',
+  'invalid_study_interval',
+]);
+const EQUATION_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_equation',
+  'invalid_equation',
+  'parse_failed',
+  'invalid_variable',
+  'ambiguous_variable',
+  'constant_equation',
+  'unsupported_equation',
+]);
+const DERIVATIVE_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_variable',
+  'ambiguous_variable',
+]);
+const LIMIT_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'missing_limit',
+  'missing_target',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_target',
+  'invalid_variable',
+  'ambiguous_variable',
+]);
+const INTEGRAL_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_expression',
+  'missing_integral',
+  'parse_failed',
+  'invalid_expression',
+  'invalid_bound',
+  'invalid_variable',
+  'ambiguous_variable',
+]);
+const ODE_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_equation',
+  'invalid_equation',
+  'missing_derivative',
+  'parse_failed',
+  'invalid_variable',
+  'invalid_function',
+  'unsupported_order',
+  'unsupported_ode',
+]);
+const VARIATION_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez un tableau de variation, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- tableau de variation de x^3 - 3x',
+  '- \u00e9tudier les variations de x^2 + 1',
+  '- \u00e9tudier les variations de f(x)=x^2 + 1',
+  '- variations de sin(x) sur [0, pi]',
+].join('\n');
+const EQUATION_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une r\u00e9solution d\'\u00e9quation, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- r\u00e9soudre x^2 - 4 = 0',
+  '- solution de 2x + 3 = 7',
+  '- r\u00e9soudre sin(x) = 0',
+].join('\n');
+const DERIVATIVE_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une d\u00e9riv\u00e9e, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- d\u00e9riv\u00e9e de x^3',
+  '- calculer la d\u00e9riv\u00e9e de sin(x)',
+  '- d\u00e9riv\u00e9e de e^x + x^2',
+].join('\n');
+const LIMIT_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une limite, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- limite de sin(x)/x quand x tend vers 0',
+  '- calculer la limite de (x^2 - 1)/(x - 1) quand x tend vers 1',
+  '- limite de 1/x quand x tend vers +infini',
+].join('\n');
+const INTEGRAL_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une int\u00e9grale, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- int\u00e9grale de x^2',
+  '- calculer l\'int\u00e9grale de x^2 entre 0 et 2',
+  '- primitive de sin(x)',
+].join('\n');
+const ODE_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une \u00e9quation diff\u00e9rentielle, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- r\u00e9soudre y\' = y',
+  '- \u00e9quation diff\u00e9rentielle y\'\' + y = 0',
+  '- solution de y\' + 2y = 3',
+].join('\n');
+const GENERIC_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une op\u00e9ration math\u00e9matique, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
+  '',
+  'Essayez par exemple :',
+  '- int\u00e9grale de x^2',
+  '- d\u00e9riv\u00e9e de sin(x)',
+  '- r\u00e9soudre x^2 - 4 = 0',
+].join('\n');
 const getRaw = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
@@ -301,9 +430,892 @@ function toChatHistory(arr) {
     .filter(Boolean);
 }
 
+function normalizeVariationIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeVariationTableRequest(text) {
+  const raw = normalizeVariationIntentProbe(text);
+  if (!raw) return false;
+
+  const asksVariationTable =
+    /tableau\s+de\s+variation/.test(raw) ||
+    /tableau\s+des\s+variations/.test(raw) ||
+    (/\bvariation\b/.test(raw) && /\btableau\b/.test(raw)) ||
+    /\betudier\s+les?\s+variations?\b/.test(raw) ||
+    /\betudiez\s+les?\s+variations?\b/.test(raw) ||
+    /\bdress(?:er|ez)\s+le\s+tableau\s+de\s+variation\b/.test(raw) ||
+    /\bvariations?\s+de\b/.test(raw);
+
+  const mentionsFunction =
+    /\bfonction\b/.test(raw) ||
+    /\bderivee\b/.test(raw) ||
+    /\bsigne\s+de\b/.test(raw) ||
+    /[a-z]\s*\(\s*x\s*\)/.test(raw) ||
+    /[a-z0-9)\]]/.test(raw);
+
+  return asksVariationTable && mentionsFunction;
+}
+
+function normalizeOdeIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeOdeRequest(text) {
+  const source = String(text || '');
+  const raw = normalizeOdeIntentProbe(source);
+  if (!raw || looksLikeVariationTableRequest(raw)) return false;
+
+  const mentionsOde =
+    /\bequation\s+differentielle\b/.test(raw) ||
+    /\bdifferentielle\b/.test(raw) ||
+    /\bed\b/.test(raw) ||
+    /\\frac\s*\{d/.test(source) ||
+    /\bd[a-z]\s*\/\s*d[a-z]\b/.test(raw);
+
+  const hasPrimeEquation =
+    /\b[a-z]\w*\s*'\s*(?:\(\s*[a-z]\s*\))?\s*=/.test(raw) ||
+    /\b[a-z]\w*\s*'\s*[+\-]/.test(raw);
+
+  if (/\bderivee\b/.test(raw) || /\bderiver\b/.test(raw)) return false;
+
+  return mentionsOde || hasPrimeEquation;
+}
+
+function normalizeEquationIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeEquationSolveRequest(text) {
+  const raw = normalizeEquationIntentProbe(text);
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeOdeRequest(raw)) return false;
+
+  const asksEquationSolve =
+    /\bresoudre\b/.test(raw) ||
+    /\btrouver\b/.test(raw) ||
+    /\bsolution\b/.test(raw) ||
+    /\bequation\b/.test(raw);
+
+  const hasEquality = /=/.test(raw);
+  const isBareEquation = /^[^=\n]+=[^=\n]+$/.test(raw);
+  const definesFunction = /\b[a-z]\w*\s*\(\s*[a-z]\s*\)\s*=/.test(raw);
+
+  if (definesFunction) return false;
+
+  return hasEquality && (asksEquationSolve || isBareEquation);
+}
+
+function normalizeDerivativeIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeDerivativeRequest(text) {
+  const raw = normalizeDerivativeIntentProbe(text);
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw)) return false;
+
+  const asksDerivative =
+    /\bderivee\b/.test(raw) ||
+    /\bderiver\b/.test(raw) ||
+    /[a-z]\s*'\s*\(\s*[a-z]\s*\)/.test(raw) ||
+    /\bprime\b/.test(raw);
+
+  if (!asksDerivative) return false;
+  if (/\btableau\b/.test(raw) || /\bsigne\b/.test(raw) || /\blimite\b/.test(raw)) return false;
+
+  const hasFunctionDefinition = /\b[a-z]\w*\s*\(\s*[a-z]\s*\)\s*=/.test(raw);
+  const hasMathContent = /[a-z0-9)\]]/.test(raw);
+  return hasFunctionDefinition || hasMathContent;
+}
+
+function normalizeLimitIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/→/g, '->')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeLimitRequest(text) {
+  const raw = normalizeLimitIntentProbe(text);
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw)) return false;
+
+  const asksLimit = /\blimite\b/.test(raw) || /^lim\b/.test(raw);
+  if (!asksLimit) return false;
+  if (/\btableau\b/.test(raw) || /\bsigne\b/.test(raw) || /\bderivee\b/.test(raw)) return false;
+
+  const hasTarget =
+    /\btend vers\b/.test(raw) ||
+    /->/.test(raw) ||
+    /\ben\s+[+\-]?(?:oo|inf|infty|infinity)\b/.test(raw) ||
+    /\ben\s+[+\-]?\d/.test(raw);
+
+  const hasMathContent = /[a-z0-9)\]]/.test(raw);
+  return asksLimit && hasTarget && hasMathContent;
+}
+
+function normalizeIntegralIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeIntegralRequest(text) {
+  const raw = normalizeIntegralIntentProbe(text);
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw) || looksLikeLimitRequest(raw)) return false;
+
+  const asksIntegral =
+    /\bintegrale\b/.test(raw) ||
+    /\bprimitive\b/.test(raw) ||
+    /∫/.test(String(text || '')) ||
+    /\\int/.test(String(text || '')) ||
+    /\bint\b/.test(raw);
+
+  if (!asksIntegral) return false;
+  if (/\btableau\b/.test(raw) || /\bsigne\b/.test(raw) || /\bderivee\b/.test(raw) || /\blimite\b/.test(raw)) return false;
+
+  const hasMathContent = /[a-z0-9)\]]/.test(raw);
+  return asksIntegral && hasMathContent;
+}
+
+function looksLikeExplanatoryMathRequest(text) {
+  const raw = normalizeEquationIntentProbe(text);
+  if (!raw) return false;
+
+  const asksExplanation =
+    /\bexplique(?:r|z)?\b/.test(raw) ||
+    /\bexplication\b/.test(raw) ||
+    /\bdemontre(?:r|z)?\b/.test(raw) ||
+    /\bdemonstration\b/.test(raw) ||
+    /\bjustifie(?:r|z)?\b/.test(raw) ||
+    /\bcommente(?:r|z)?\b/.test(raw) ||
+    /\bcommentaire\b/.test(raw) ||
+    /\bpourquoi\b/.test(raw);
+
+  if (!asksExplanation) return false;
+
+  const mentionsMath =
+    /=/.test(raw) ||
+    /\b(?:equation|derivee|integrale|primitive|limite|variation|variations|resultat|courbe)\b/.test(raw) ||
+    /[a-z]\s*'\s*(?:\(\s*[a-z]\s*\))?/.test(raw);
+
+  return mentionsMath;
+}
+
+function looksLikeGenericMathGuidanceRequest(text) {
+  const raw = normalizeEquationIntentProbe(text);
+  if (!raw || looksLikeExplanatoryMathRequest(raw)) return false;
+
+  const mentionsKnownMathObject =
+    /\b(?:derivee|integrale|primitive|limite|equation|variation|variations|differentielle|tableau)\b/.test(raw);
+
+  const asksMathOperation =
+    /\b(?:calculer|calculez|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|etudier|etudiez|dresser|dressez|donner|donnez|donne)\b/.test(raw);
+
+  const hasSymbolicMath =
+    /=/.test(raw) ||
+    /->/.test(raw) ||
+    /[a-z]\s*'\s*(?:\(\s*[a-z]\s*\))?/.test(raw) ||
+    /[a-z]\s*\(\s*[a-z]\s*\)/.test(raw) ||
+    /\b(?:sin|cos|tan|exp|ln|log)\s*\(/.test(raw) ||
+    (/\b\d+\b/.test(raw) && /[a-z]/.test(raw));
+
+  return mentionsKnownMathObject || (asksMathOperation && hasSymbolicMath);
+}
+
+function buildEffectiveSystemPrompt(sys, userText) {
+  const base = String(sys || '').trim();
+  if (!looksLikeVariationTableRequest(userText)) return base;
+  return base ? `${base}\n\n${VARIATION_FALLBACK_GUIDANCE}` : VARIATION_FALLBACK_GUIDANCE;
+}
+
+function wrapVariationTableHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${VARIATION_TABLE_HTML_OPEN}${body}${VARIATION_TABLE_HTML_CLOSE}`;
+}
+
+function wrapEquationSolveHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${EQUATION_SOLVE_HTML_OPEN}${body}${EQUATION_SOLVE_HTML_CLOSE}`;
+}
+
+function wrapDerivativeHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${DERIVATIVE_HTML_OPEN}${body}${DERIVATIVE_HTML_CLOSE}`;
+}
+
+function wrapLimitHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${LIMIT_HTML_OPEN}${body}${LIMIT_HTML_CLOSE}`;
+}
+
+function wrapIntegralHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${INTEGRAL_HTML_OPEN}${body}${INTEGRAL_HTML_CLOSE}`;
+}
+
+function shouldShowGuidance(reason, allowedReasons) {
+  return allowedReasons.has(String(reason || '').trim());
+}
+
+function shouldShowVariationGuidance(reason) {
+  return shouldShowGuidance(reason, VARIATION_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowEquationGuidance(reason) {
+  return shouldShowGuidance(reason, EQUATION_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowDerivativeGuidance(reason) {
+  return shouldShowGuidance(reason, DERIVATIVE_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowLimitGuidance(reason) {
+  return shouldShowGuidance(reason, LIMIT_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowIntegralGuidance(reason) {
+  return shouldShowGuidance(reason, INTEGRAL_LOCAL_GUIDANCE_REASONS);
+}
+
+function shouldShowOdeGuidance(reason) {
+  return shouldShowGuidance(reason, ODE_LOCAL_GUIDANCE_REASONS);
+}
+
+function createLocalGuidancePayload(answerText, pipeline) {
+  return {
+    answerText: String(answerText || '').trim(),
+    reasoningText: '',
+    reasoningDurationMs: null,
+    pipeline: String(pipeline || '').trim() || 'deterministic-guidance',
+  };
+}
+
+function createVariationGuidancePayload() {
+  return createLocalGuidancePayload(VARIATION_LOCAL_GUIDANCE_MESSAGE, 'deterministic-variation-guidance');
+}
+
+function createEquationGuidancePayload() {
+  return createLocalGuidancePayload(EQUATION_LOCAL_GUIDANCE_MESSAGE, 'deterministic-equation-guidance');
+}
+
+function createDerivativeGuidancePayload() {
+  return createLocalGuidancePayload(DERIVATIVE_LOCAL_GUIDANCE_MESSAGE, 'deterministic-derivative-guidance');
+}
+
+function createLimitGuidancePayload() {
+  return createLocalGuidancePayload(LIMIT_LOCAL_GUIDANCE_MESSAGE, 'deterministic-limit-guidance');
+}
+
+function createIntegralGuidancePayload() {
+  return createLocalGuidancePayload(INTEGRAL_LOCAL_GUIDANCE_MESSAGE, 'deterministic-integral-guidance');
+}
+
+function createOdeGuidancePayload() {
+  return createLocalGuidancePayload(ODE_LOCAL_GUIDANCE_MESSAGE, 'deterministic-ode-guidance');
+}
+
+function createGenericGuidancePayload() {
+  return createLocalGuidancePayload(GENERIC_LOCAL_GUIDANCE_MESSAGE, 'deterministic-generic-guidance');
+}
+
+function wrapOdeHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${ODE_HTML_OPEN}${body}${ODE_HTML_CLOSE}`;
+}
+
+function createPipelineAttempt({
+  matched = false,
+  payload = null,
+  rawPayload = null,
+  fallbackReason = '',
+  fallbackMessage = '',
+} = {}) {
+  return {
+    matched: Boolean(matched),
+    payload: payload || null,
+    rawPayload: rawPayload || null,
+    fallbackReason: String(fallbackReason || ''),
+    fallbackMessage: String(fallbackMessage || ''),
+  };
+}
+
+function extractDeterministicPayloadData(payload) {
+  if (payload?.data && typeof payload.data === 'object') return payload.data;
+  return payload && typeof payload === 'object' ? payload : null;
+}
+
+function readDeterministicFallbackMessage(payload) {
+  return String(payload?.message || payload?.error || '');
+}
+
+function buildDeterministicReplyPayload({ html, pipeline }) {
+  return {
+    answerText: String(html || '').trim(),
+    reasoningText: '',
+    reasoningDurationMs: null,
+    pipeline: String(pipeline || '').trim() || 'deterministic-pipeline',
+  };
+}
+
+function logDeterministicPipelineFallback(label, attempt) {
+  if (!attempt?.matched || attempt?.payload) return;
+  const reason = attempt.fallbackReason || 'analysis_failed';
+  const details = attempt.fallbackMessage ? ` (${attempt.fallbackMessage})` : '';
+  console.info(`[${label}] fallback vers le pipeline modele: ${reason}${details}`);
+}
+
+async function renderDeterministicReply({ conversationId, targetBubble, payload, model }) {
+  let bubble = targetBubble;
+  if (!bubble) bubble = renderMsg('assistant', payload.answerText, { model, pyodideFinal: true, allowSpecializedHtml: true });
+  else renderAssistantChunk(bubble, payload, { model, pyodideFinal: true, allowSpecializedHtml: true });
+
+  if (conversationId) {
+    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', payload.answerText, {
+      reasoningText: '',
+      model,
+      reasoningDurationMs: null,
+    });
+    bindMessageRecord(bubble, savedAssistantMessage);
+  }
+
+  try { await mountHistory(); } catch (_) {}
+  return bubble;
+}
+
+async function requestDeterministicPipeline(prompt, spec) {
+  if (!spec?.looksLikeRequest?.(prompt)) return createPipelineAttempt();
+
+  try {
+    const res = await fetch(spec.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: String(prompt || '') }),
+    });
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch (_) {}
+
+    if (!res.ok) {
+      const reason = String(payload?.reason || `http-${res.status}`);
+      const fallbackMessage = readDeterministicFallbackMessage(payload);
+      const payloadStatus = String(payload?.status || '').trim().toLowerCase();
+      const shouldUseGuidance = payloadStatus === 'guidance'
+        || (!payloadStatus && spec.shouldShowGuidance(reason));
+      if (shouldUseGuidance) {
+        return createPipelineAttempt({
+          matched: true,
+          payload: spec.createGuidancePayload(),
+          rawPayload: payload,
+          fallbackReason: reason,
+          fallbackMessage,
+        });
+      }
+      return createPipelineAttempt({
+        matched: true,
+        rawPayload: payload,
+        fallbackReason: reason,
+        fallbackMessage,
+      });
+    }
+
+    const responseData = extractDeterministicPayloadData(payload);
+    const html = spec.wrapHtml(responseData?.html || payload?.html || '');
+    if (!html) {
+      return createPipelineAttempt({
+        matched: true,
+        rawPayload: payload,
+        fallbackReason: 'missing_html',
+        fallbackMessage: spec.missingHtmlMessage,
+      });
+    }
+
+    return createPipelineAttempt({
+      matched: true,
+      payload: buildDeterministicReplyPayload({
+        html,
+        pipeline: String(payload?.pipeline || responseData?.pipeline || spec.pipeline),
+      }),
+      rawPayload: payload,
+    });
+  } catch (err) {
+    return createPipelineAttempt({
+      matched: true,
+      fallbackReason: 'request_failed',
+      fallbackMessage: err?.message || String(err || ''),
+    });
+  }
+}
+
+const VARIATION_PIPELINE_SPEC = {
+  label: 'variation-table',
+  pipeline: 'deterministic-variation',
+  endpoint: '/api/math/variation-table',
+  looksLikeRequest: looksLikeVariationTableRequest,
+  shouldShowGuidance: shouldShowVariationGuidance,
+  createGuidancePayload: createVariationGuidancePayload,
+  wrapHtml: wrapVariationTableHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de tableau exploitable.',
+};
+
+const EQUATION_PIPELINE_SPEC = {
+  label: 'equation-solve',
+  pipeline: 'deterministic-equation',
+  endpoint: '/api/math/equation-solve',
+  looksLikeRequest: looksLikeEquationSolveRequest,
+  shouldShowGuidance: shouldShowEquationGuidance,
+  createGuidancePayload: createEquationGuidancePayload,
+  wrapHtml: wrapEquationSolveHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const ODE_PIPELINE_SPEC = {
+  label: 'ode',
+  pipeline: 'deterministic-ode',
+  endpoint: '/api/math/ode',
+  looksLikeRequest: looksLikeOdeRequest,
+  shouldShowGuidance: shouldShowOdeGuidance,
+  createGuidancePayload: createOdeGuidancePayload,
+  wrapHtml: wrapOdeHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const DERIVATIVE_PIPELINE_SPEC = {
+  label: 'derivative',
+  pipeline: 'deterministic-derivative',
+  endpoint: '/api/math/derivative',
+  looksLikeRequest: looksLikeDerivativeRequest,
+  shouldShowGuidance: shouldShowDerivativeGuidance,
+  createGuidancePayload: createDerivativeGuidancePayload,
+  wrapHtml: wrapDerivativeHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const LIMIT_PIPELINE_SPEC = {
+  label: 'limit',
+  pipeline: 'deterministic-limit',
+  endpoint: '/api/math/limit',
+  looksLikeRequest: looksLikeLimitRequest,
+  shouldShowGuidance: shouldShowLimitGuidance,
+  createGuidancePayload: createLimitGuidancePayload,
+  wrapHtml: wrapLimitHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const INTEGRAL_PIPELINE_SPEC = {
+  label: 'integral',
+  pipeline: 'deterministic-integral',
+  endpoint: '/api/math/integral',
+  looksLikeRequest: looksLikeIntegralRequest,
+  shouldShowGuidance: shouldShowIntegralGuidance,
+  createGuidancePayload: createIntegralGuidancePayload,
+  wrapHtml: wrapIntegralHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
+};
+
+const DETERMINISTIC_PIPELINE_SPECS = [
+  VARIATION_PIPELINE_SPEC,
+  EQUATION_PIPELINE_SPEC,
+  ODE_PIPELINE_SPEC,
+  DERIVATIVE_PIPELINE_SPEC,
+  LIMIT_PIPELINE_SPEC,
+  INTEGRAL_PIPELINE_SPEC,
+];
+
+async function resolveDeterministicPipeline(prompt) {
+  if (looksLikeExplanatoryMathRequest(prompt)) return { handled: false, attempt: null, spec: null, payload: null };
+
+  for (const spec of DETERMINISTIC_PIPELINE_SPECS) {
+    const attempt = await requestDeterministicPipeline(prompt, spec);
+    if (attempt.payload) {
+      return { handled: true, attempt, spec, payload: attempt.payload };
+    }
+    logDeterministicPipelineFallback(spec.label, attempt);
+  }
+
+  if (looksLikeGenericMathGuidanceRequest(prompt)) {
+    const payload = createGenericGuidancePayload();
+    return {
+      handled: true,
+      payload,
+      spec: null,
+      attempt: createPipelineAttempt({
+        matched: true,
+        payload,
+        fallbackReason: 'generic_guidance',
+      }),
+    };
+  }
+
+  return { handled: false, attempt: null, spec: null, payload: null };
+}
+
+async function attemptDeterministicPipelineChain({ prompt, conversationId, targetBubble, model }) {
+  let bubble = targetBubble || null;
+  const result = await resolveDeterministicPipeline(prompt);
+  if (!result.handled || !result.payload) return { handled: false, bubble, ...result };
+
+  bubble = await renderDeterministicReply({
+    conversationId,
+    targetBubble: bubble,
+    payload: result.payload,
+    model,
+  });
+  return { handled: true, bubble, ...result };
+}
+
+function extractExplicitQuestionBlocks(text) {
+  const source = String(text || '').replace(/\r/g, '').trim();
+  if (!source) return null;
+
+  const markerRe = /^\s*((?:\d+|[a-zA-Z])[.)])\s+([\s\S]*?)(?=^\s*(?:\d+|[a-zA-Z])[.)]\s+|\s*$)/gm;
+  const matches = [...source.matchAll(markerRe)];
+  if (matches.length < 2) return null;
+
+  const firstIndex = matches[0]?.index ?? 0;
+  const preamble = source.slice(0, firstIndex).trim();
+  const segments = matches.map((match) => {
+    const label = String(match[1] || '').trim();
+    const body = String(match[2] || '').trim();
+    return {
+      label,
+      body,
+      raw: `${label} ${body}`.trim(),
+    };
+  }).filter((segment) => segment.label && segment.body);
+
+  if (segments.length < 2) return null;
+  return { source, preamble, segments };
+}
+
+function segmentContainsFunctionExpression(text) {
+  return /(?:[a-zA-Z]\w*\s*\(\s*[a-zA-Z]\s*\)\s*=|\by\s*=)/.test(String(text || ''));
+}
+
+function buildSegmentPrompt(exercise, segment) {
+  return [exercise?.preamble, segment?.body].filter(Boolean).join('\n\n').trim();
+}
+
+function buildSegmentVariationProbeText(exercise, segment) {
+  return buildSegmentPrompt(exercise, segment);
+}
+
+function buildSegmentVariationPrompt(exercise, segment) {
+  const scoped = buildSegmentPrompt(exercise, segment);
+  if (segmentContainsFunctionExpression(scoped)) return scoped;
+  return String(exercise?.source || scoped || '').trim();
+}
+
+function looksLikeDeterministicSegmentCandidate(prompt) {
+  const text = String(prompt || '');
+  return DETERMINISTIC_PIPELINE_SPECS.some((spec) => spec.looksLikeRequest(text))
+    || looksLikeGenericMathGuidanceRequest(text)
+    || looksLikeExplanatoryMathRequest(text);
+}
+
+function shouldUseSegmentedExerciseRouting(exercise) {
+  if (!exercise?.segments?.length) return false;
+  return exercise.segments.some((segment) => looksLikeDeterministicSegmentCandidate(buildSegmentPrompt(exercise, segment)));
+}
+
+function latexToPlainMath(value) {
+  return String(value || '')
+    .replace(/\\left|\\right/g, '')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\nearrow/g, '↗')
+    .replace(/\\searrow/g, '↘')
+    .replace(/\^\{([^}]+)\}/g, '^$1')
+    .replace(/\\cdot/g, '·')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildVariationContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const segments = Array.isArray(payload?.segments) ? payload.segments : [];
+  if (!segments.length) return 'Un tableau de variation deterministe a ete calcule.';
+
+  const pieces = segments.map((segment) => {
+    const points = Array.isArray(segment?.points) ? segment.points : [];
+    const intervals = Array.isArray(segment?.intervals) ? segment.intervals : [];
+    const xValues = points.map((point) => latexToPlainMath(point?.xLabel || '')).filter(Boolean).join(', ');
+    const signs = intervals.map((interval) => latexToPlainMath(interval?.sign || '')).filter(Boolean).join(', ');
+    const arrows = intervals.map((interval) => latexToPlainMath(interval?.arrow || '')).filter(Boolean).join(', ');
+    const values = points.map((point) => latexToPlainMath(point?.valueLabel || '')).filter(Boolean).join(', ');
+    const part = [];
+    if (xValues) part.push(`x : ${xValues}`);
+    if (signs) part.push(`signes de f'(x) : ${signs}`);
+    if (values) part.push(`valeurs de f(x) : ${values}`);
+    if (arrows) part.push(`variations : ${arrows}`);
+    return part.join(' ; ');
+  }).filter(Boolean);
+
+  if (!pieces.length) return 'Un tableau de variation deterministe a ete calcule.';
+  return `Tableau de variation determine : ${pieces.join(' | ')}`;
+}
+
+function buildEquationContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const equation = latexToPlainMath(payload?.equationLatex || '');
+  const domain = latexToPlainMath(payload?.domainLatex || '');
+  const solution = latexToPlainMath(payload?.solutionSetLatex || '');
+  const lines = [];
+  if (equation) lines.push(`Equation : ${equation}`);
+  if (domain) lines.push(`Domaine : ${domain}`);
+  if (solution) lines.push(`Ensemble solution : S = ${solution}`);
+  return lines.join('\n') || 'Une equation a ete resolue par le pipeline deterministe.';
+}
+
+function buildDerivativeContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const derivative = latexToPlainMath(payload?.derivativeLatex || '');
+  const lines = [];
+  if (expression) lines.push(`Expression : ${expression}`);
+  lines.push(`Variable : ${variable}`);
+  if (derivative) lines.push(`Derivee : f'(${variable}) = ${derivative}`);
+  return lines.join('\n') || 'Une derivee a ete calculee par le pipeline deterministe.';
+}
+
+function buildLimitContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const statement = latexToPlainMath(payload?.limitStatementLatex || '');
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const target = latexToPlainMath(payload?.targetLatex || '');
+  const value = latexToPlainMath(payload?.limitLatex || '');
+  const lines = [];
+  if (statement) lines.push(`Limite : ${statement}`);
+  else {
+    if (expression) lines.push(`Expression : ${expression}`);
+    if (target) lines.push(`Point : ${target}`);
+    if (value) lines.push(`Valeur de la limite : ${value}`);
+  }
+  return lines.join('\n') || 'Une limite a ete calculee par le pipeline deterministe.';
+}
+
+function buildIntegralContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const statement = latexToPlainMath(payload?.integralStatementLatex || '');
+  const expression = latexToPlainMath(payload?.expressionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const lower = latexToPlainMath(payload?.lowerBoundLatex || '');
+  const upper = latexToPlainMath(payload?.upperBoundLatex || '');
+  const lines = [];
+  if (expression) lines.push(`Expression : ${expression}`);
+  lines.push(`Variable : ${variable}`);
+  if (payload?.isDefinite && lower && upper) lines.push(`Bornes : [${lower}, ${upper}]`);
+  if (statement) lines.push(`Resultat : ${statement}`);
+  return lines.join('\n') || 'Une integrale a ete calculee par le pipeline deterministe.';
+}
+
+function buildOdeContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const equation = latexToPlainMath(payload?.equationLatex || '');
+  const functionLatex = latexToPlainMath(payload?.functionLatex || '');
+  const variable = String(payload?.variable || 'x').trim() || 'x';
+  const solution = latexToPlainMath(payload?.solutionLatex || '');
+  const lines = [];
+  if (equation) lines.push(`Equation : ${equation}`);
+  if (functionLatex) lines.push(`Inconnue : ${functionLatex}`);
+  lines.push(`Variable : ${variable}`);
+  if (solution) lines.push(`Solution : ${solution}`);
+  return lines.join('\n') || 'Une equation differentielle a ete resolue par le pipeline deterministe.';
+}
+
+function buildDeterministicContextSummary(spec, rawPayload) {
+  switch (spec?.pipeline) {
+    case VARIATION_PIPELINE_SPEC.pipeline:
+      return buildVariationContextSummary(rawPayload);
+    case EQUATION_PIPELINE_SPEC.pipeline:
+      return buildEquationContextSummary(rawPayload);
+    case DERIVATIVE_PIPELINE_SPEC.pipeline:
+      return buildDerivativeContextSummary(rawPayload);
+    case LIMIT_PIPELINE_SPEC.pipeline:
+      return buildLimitContextSummary(rawPayload);
+    case INTEGRAL_PIPELINE_SPEC.pipeline:
+      return buildIntegralContextSummary(rawPayload);
+    case ODE_PIPELINE_SPEC.pipeline:
+      return buildOdeContextSummary(rawPayload);
+    default:
+      return 'Une sous-question a ete traitee par le pipeline deterministe.';
+  }
+}
+
+function buildSegmentModelPrompt({ exercise, segmentIndex, resolvedSegments }) {
+  const segment = exercise?.segments?.[segmentIndex];
+  if (!segment) return '';
+
+  const resolvedText = (resolvedSegments || [])
+    .map((item) => {
+      const body = String(item?.contextText || '').trim();
+      if (!body) return '';
+      return `${item.label} ${body}`.trim();
+    })
+    .filter(Boolean)
+    .join('\n\n');
+
+  return [
+    exercise?.preamble ? `Contexte general:\n${exercise.preamble}` : '',
+    `Enonce complet:\n${exercise?.source || ''}`,
+    resolvedText ? `Sous-questions deja traitees dans l'ordre:\n${resolvedText}` : '',
+    `Repondez uniquement a la sous-question ${segment.label}.`,
+    "Ne traitez pas les autres sous-questions et ne repetez pas leur intitule.",
+    "Donnez directement la reponse utile a cette sous-question.",
+    `Sous-question ${segment.label}:\n${segment.body}`,
+  ].filter(Boolean).join('\n\n');
+}
+
+function formatResolvedSegmentOutput(segment, answerText) {
+  const heading = `**${String(segment?.raw || '').trim()}**`;
+  const body = String(answerText || '').trim();
+  return body ? `${heading}\n\n${body}` : heading;
+}
+
+async function collectModelBlockAnswer({ base, model, sys, prompt }) {
+  const assistantState = createAssistantStreamState();
+  for await (const chunk of streamChat({
+    base,
+    model,
+    sys,
+    prompt,
+    convId: null,
+    images: [],
+  })) {
+    mergeAssistantStreamChunk(assistantState, chunk);
+  }
+  return finalizeAssistantStreamState(assistantState);
+}
+
+async function attemptSegmentedExerciseReply({ content, conversationId, targetBubble, base, model, sys }) {
+  const exercise = extractExplicitQuestionBlocks(content);
+  if (!exercise) return null;
+  if (!shouldUseSegmentedExerciseRouting(exercise)) return null;
+
+  let bubble = targetBubble;
+  let combinedAnswer = '';
+  const resolvedSegments = [];
+
+  for (let index = 0; index < exercise.segments.length; index += 1) {
+    const segment = exercise.segments[index];
+    const segmentPrompt = buildSegmentPrompt(exercise, segment);
+    const variationPrompt = buildSegmentVariationPrompt(exercise, segment);
+    const deterministicPrompt =
+      looksLikeVariationTableRequest(buildSegmentVariationProbeText(exercise, segment))
+        ? variationPrompt
+        : segmentPrompt;
+
+    let sectionAnswer = '';
+    let contextText = '';
+
+    const deterministicResult = await resolveDeterministicPipeline(deterministicPrompt);
+    if (deterministicResult.handled && deterministicResult.payload) {
+      contextText = buildDeterministicContextSummary(
+        deterministicResult.spec,
+        deterministicResult.attempt?.rawPayload,
+      );
+      sectionAnswer = contextText;
+    }
+
+    if (!sectionAnswer) {
+      const modelPrompt = buildSegmentModelPrompt({
+        exercise,
+        segmentIndex: index,
+        resolvedSegments,
+      });
+      const modelPayload = await collectModelBlockAnswer({
+        base,
+        model,
+        sys,
+        prompt: modelPrompt,
+      });
+      sectionAnswer = String(modelPayload?.answerText || modelPayload?.reasoningText || '').trim();
+      contextText = sectionAnswer;
+    }
+
+    const sectionOutput = formatResolvedSegmentOutput(segment, sectionAnswer);
+    combinedAnswer = combinedAnswer ? `${combinedAnswer}\n\n${sectionOutput}` : sectionOutput;
+    resolvedSegments.push({
+      label: segment.label,
+      contextText: contextText || 'Sous-question traitee.',
+    });
+
+    if (!bubble) {
+      bubble = renderMsg('assistant', combinedAnswer, { model, pyodideFinal: false });
+    } else {
+      renderAssistantChunk(
+        bubble,
+        { answerText: combinedAnswer, reasoningText: '', reasoningDurationMs: null },
+        { model, pyodideFinal: index === exercise.segments.length - 1 },
+      );
+    }
+  }
+
+  if (bubble) {
+    renderAssistantChunk(
+      bubble,
+      { answerText: combinedAnswer, reasoningText: '', reasoningDurationMs: null },
+      { model, pyodideFinal: true },
+    );
+  }
+
+  if (conversationId && combinedAnswer.trim()) {
+    const savedAssistantMessage = await Store.addMsg(conversationId, 'assistant', combinedAnswer, {
+      reasoningText: '',
+      model,
+      reasoningDurationMs: null,
+    });
+    if (bubble) bindMessageRecord(bubble, savedAssistantMessage);
+  }
+
+  try { await mountHistory(); } catch (_) {}
+  return {
+    bubble,
+    answerText: combinedAnswer,
+  };
+}
+
 function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] }) {
   const out = [];
   const history = toChatHistory(readHistory(convId));
+  const effectiveSys = buildEffectiveSystemPrompt(sys, userText);
 
   let hist = history.slice();
   if (hist.length) {
@@ -315,7 +1327,7 @@ function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] })
 
   const trimmed = hist.slice(-maxPast);
 
-  if (sys && sys.trim()) out.push({ role: 'system', content: sys.trim() });
+  if (effectiveSys) out.push({ role: 'system', content: effectiveSys });
   for (const message of trimmed) out.push({ role: message.role, content: message.content });
 
   const current = { role: 'user', content: userText };
@@ -327,7 +1339,8 @@ function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] })
 function buildGeneratePrompt({ sys, convId, userText, maxPast = 16 }) {
   const history = toChatHistory(readHistory(convId)).slice(-maxPast);
   const parts = [];
-  if (sys && sys.trim()) parts.push(`System:\n${sys.trim()}`);
+  const effectiveSys = buildEffectiveSystemPrompt(sys, userText);
+  if (effectiveSys) parts.push(`System:\n${effectiveSys}`);
   for (const message of history) {
     parts.push((message.role === 'user' ? 'User' : 'Assistant') + ':\n' + message.content);
   }
@@ -382,12 +1395,13 @@ export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 
 }
 
 export async function* streamGenerate({ base, model, sys, prompt, convId, maxPast = 16 }) {
+  const effectiveSys = buildEffectiveSystemPrompt(sys, prompt);
   const res = await fetch(base + '/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      system: (sys || '').trim() || undefined,
+      system: effectiveSys || undefined,
       prompt: buildGeneratePrompt({ sys, convId, userText: prompt, maxPast }),
       stream: true,
     }),
@@ -508,6 +1522,29 @@ export async function regenerateFromEditedMessage({ conversationId, messageId, c
       const savedError = await Store.addMsg(conversationId, 'assistant', `Erreur: ${err?.message || err}`, { model });
       bindMessageRecord(aiB, savedError);
       try { await mountHistory(); } catch (_) {}
+      return Store.get(conversationId) || conversation;
+    }
+
+    const segmentedReply = await attemptSegmentedExerciseReply({
+      content: lastMessage.content,
+      conversationId,
+      targetBubble: null,
+      base,
+      model,
+      sys,
+    });
+    if (segmentedReply?.answerText) {
+      return Store.get(conversationId) || conversation;
+    }
+
+    const deterministicReply = await attemptDeterministicPipelineChain({
+      prompt: lastMessage.content,
+      conversationId,
+      targetBubble: null,
+      model,
+    });
+    if (deterministicReply.handled) {
+      aiB = deterministicReply.bubble;
       return Store.get(conversationId) || conversation;
     }
 
@@ -695,6 +1732,33 @@ export async function sendCurrent() {
     try {
       await mountHistory();
     } catch (_) {}
+
+    const deterministicPrompt = prepared.promptText || text;
+    const canUseDeterministicPipelines = !prepared.imagePayloads?.length && detachedUploads.length === 0;
+    if (canUseDeterministicPipelines) {
+      const segmentedReply = await attemptSegmentedExerciseReply({
+        content: deterministicPrompt,
+        conversationId: convId,
+        targetBubble: aiB,
+        base,
+        model,
+        sys,
+      });
+      if (segmentedReply?.answerText) {
+        return;
+      }
+
+      const deterministicReply = await attemptDeterministicPipelineChain({
+        prompt: deterministicPrompt,
+        conversationId: convId,
+        targetBubble: aiB,
+        model,
+      });
+      if (deterministicReply.handled) {
+        aiB = deterministicReply.bubble;
+        return;
+      }
+    }
 
     if (!aiB) aiB = renderMsg('assistant', '', { model });
     const assistantState = createAssistantStreamState();
