@@ -58,6 +58,8 @@ const VARIATION_FALLBACK_GUIDANCE = [
   ].join('\n');
   const VARIATION_TABLE_HTML_OPEN = '<variation-table-html>';
   const VARIATION_TABLE_HTML_CLOSE = '</variation-table-html>';
+  const SYSTEM_SOLVE_HTML_OPEN = '<system-solve-html>';
+  const SYSTEM_SOLVE_HTML_CLOSE = '</system-solve-html>';
   const EQUATION_SOLVE_HTML_OPEN = '<equation-solve-html>';
   const EQUATION_SOLVE_HTML_CLOSE = '</equation-solve-html>';
   const DERIVATIVE_HTML_OPEN = '<derivative-html>';
@@ -86,6 +88,13 @@ const EQUATION_LOCAL_GUIDANCE_REASONS = new Set([
   'ambiguous_variable',
   'constant_equation',
   'unsupported_equation',
+]);
+const SYSTEM_LOCAL_GUIDANCE_REASONS = new Set([
+  'missing_system',
+  'invalid_system',
+  'parse_failed',
+  'ambiguous_variable',
+  'unsupported_system',
 ]);
 const DERIVATIVE_LOCAL_GUIDANCE_REASONS = new Set([
   'missing_expression',
@@ -139,6 +148,14 @@ const EQUATION_LOCAL_GUIDANCE_MESSAGE = [
   '- r\u00e9soudre x^2 - 4 = 0',
   '- solution de 2x + 3 = 7',
   '- r\u00e9soudre sin(x) = 0',
+].join('\n');
+const SYSTEM_LOCAL_GUIDANCE_MESSAGE = [
+  'Je comprends que vous demandez une r\u00e9solution de syst\u00e8me, mais je n\'ai pas pu interpr\u00e9ter les \u00e9quations.',
+  '',
+  'Essayez par exemple :',
+  '- resoudre le systeme x + y = 3 ; x - y = 1',
+  '- systeme : 2x + y = 5 et x - y = 1',
+  '- resoudre { 3z1 + z2 = 5 + 2i ; -z1 + z2 = 1 - 2i }',
 ].join('\n');
 const DERIVATIVE_LOCAL_GUIDANCE_MESSAGE = [
   'Je comprends que vous demandez une d\u00e9riv\u00e9e, mais je n\'ai pas pu interpr\u00e9ter l\'expression.',
@@ -494,6 +511,38 @@ function looksLikeOdeRequest(text) {
   return mentionsOde || hasPrimeEquation;
 }
 
+function normalizeSystemIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeSystemSolveRequest(text) {
+  const source = String(text || '');
+  const raw = normalizeSystemIntentProbe(source);
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeOdeRequest(raw)) return false;
+
+  const equalityCount = (source.match(/=/g) || []).length;
+  if (equalityCount < 2) return false;
+
+  const asksSystem =
+    /\bsysteme\b/.test(raw) ||
+    /\bsystem\b/.test(raw) ||
+    /\bresoudre\b/.test(raw);
+
+  const hasStructuredLayout =
+    /\\begin\{aligned\}/.test(source) ||
+    /\\begin\{cases\}/.test(source) ||
+    /\\left\\\{/.test(source) ||
+    /\{[^{}]*=[^{}]*;[^{}]*=/.test(source);
+
+  return asksSystem || hasStructuredLayout;
+}
+
 function normalizeEquationIntentProbe(text) {
   return String(text || '')
     .toLowerCase()
@@ -506,7 +555,7 @@ function normalizeEquationIntentProbe(text) {
 
 function looksLikeEquationSolveRequest(text) {
   const raw = normalizeEquationIntentProbe(text);
-  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeOdeRequest(raw)) return false;
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeOdeRequest(raw) || looksLikeSystemSolveRequest(text)) return false;
 
   const asksEquationSolve =
     /\bresoudre\b/.test(raw) ||
@@ -535,7 +584,7 @@ function normalizeDerivativeIntentProbe(text) {
 
 function looksLikeDerivativeRequest(text) {
   const raw = normalizeDerivativeIntentProbe(text);
-  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw)) return false;
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeSystemSolveRequest(text) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw)) return false;
 
   const asksDerivative =
     /\bderivee\b/.test(raw) ||
@@ -564,7 +613,7 @@ function normalizeLimitIntentProbe(text) {
 
 function looksLikeLimitRequest(text) {
   const raw = normalizeLimitIntentProbe(text);
-  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw)) return false;
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeSystemSolveRequest(text) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw)) return false;
 
   const asksLimit = /\blimite\b/.test(raw) || /^lim\b/.test(raw);
   if (!asksLimit) return false;
@@ -592,7 +641,7 @@ function normalizeIntegralIntentProbe(text) {
 
 function looksLikeIntegralRequest(text) {
   const raw = normalizeIntegralIntentProbe(text);
-  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw) || looksLikeLimitRequest(raw)) return false;
+  if (!raw || looksLikeVariationTableRequest(raw) || looksLikeSystemSolveRequest(text) || looksLikeEquationSolveRequest(raw) || looksLikeOdeRequest(raw) || looksLikeDerivativeRequest(raw) || looksLikeLimitRequest(raw)) return false;
 
   const asksIntegral =
     /\bintegrale\b/.test(raw) ||
@@ -626,7 +675,7 @@ function looksLikeExplanatoryMathRequest(text) {
 
   const mentionsMath =
     /=/.test(raw) ||
-    /\b(?:equation|derivee|integrale|primitive|limite|variation|variations|resultat|courbe)\b/.test(raw) ||
+    /\b(?:equation|derivee|integrale|primitive|limite|variation|variations|resultat|courbe|systeme)\b/.test(raw) ||
     /[a-z]\s*'\s*(?:\(\s*[a-z]\s*\))?/.test(raw);
 
   return mentionsMath;
@@ -637,7 +686,7 @@ function looksLikeGenericMathGuidanceRequest(text) {
   if (!raw || looksLikeExplanatoryMathRequest(raw)) return false;
 
   const mentionsKnownMathObject =
-    /\b(?:derivee|integrale|primitive|limite|equation|variation|variations|differentielle|tableau)\b/.test(raw);
+    /\b(?:derivee|integrale|primitive|limite|equation|variation|variations|differentielle|tableau|systeme)\b/.test(raw);
 
   const asksMathOperation =
     /\b(?:calculer|calculez|determiner|determinez|determine|trouver|trouvez|trouve|resoudre|resolvez|resous|etudier|etudiez|dresser|dressez|donner|donnez|donne)\b/.test(raw);
@@ -663,6 +712,12 @@ function wrapVariationTableHtml(html) {
   const body = String(html || '').trim();
   if (!body) return '';
   return `${VARIATION_TABLE_HTML_OPEN}${body}${VARIATION_TABLE_HTML_CLOSE}`;
+}
+
+function wrapSystemSolveHtml(html) {
+  const body = String(html || '').trim();
+  if (!body) return '';
+  return `${SYSTEM_SOLVE_HTML_OPEN}${body}${SYSTEM_SOLVE_HTML_CLOSE}`;
 }
 
 function wrapEquationSolveHtml(html) {
@@ -701,6 +756,10 @@ function shouldShowEquationGuidance(reason) {
   return shouldShowGuidance(reason, EQUATION_LOCAL_GUIDANCE_REASONS);
 }
 
+function shouldShowSystemGuidance(reason) {
+  return shouldShowGuidance(reason, SYSTEM_LOCAL_GUIDANCE_REASONS);
+}
+
 function shouldShowDerivativeGuidance(reason) {
   return shouldShowGuidance(reason, DERIVATIVE_LOCAL_GUIDANCE_REASONS);
 }
@@ -732,6 +791,10 @@ function createVariationGuidancePayload() {
 
 function createEquationGuidancePayload() {
   return createLocalGuidancePayload(EQUATION_LOCAL_GUIDANCE_MESSAGE, 'deterministic-equation-guidance');
+}
+
+function createSystemGuidancePayload() {
+  return createLocalGuidancePayload(SYSTEM_LOCAL_GUIDANCE_MESSAGE, 'deterministic-system-guidance');
 }
 
 function createDerivativeGuidancePayload() {
@@ -794,6 +857,10 @@ function buildDeterministicReplyPayload({ html, pipeline }) {
   };
 }
 
+function tracePromptPreview(text, maxLength = 500) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
 function logDeterministicPipelineFallback(label, attempt) {
   if (!attempt?.matched || attempt?.payload) return;
   const reason = attempt.fallbackReason || 'analysis_failed';
@@ -822,6 +889,12 @@ async function renderDeterministicReply({ conversationId, targetBubble, payload,
 async function requestDeterministicPipeline(prompt, spec) {
   if (!spec?.looksLikeRequest?.(prompt)) return createPipelineAttempt();
 
+  console.info('[Kivrio trace][deterministic-request]', {
+    pipeline: spec.pipeline,
+    endpoint: spec.endpoint,
+    promptPreview: tracePromptPreview(prompt),
+  });
+
   try {
     const res = await fetch(spec.endpoint, {
       method: 'POST',
@@ -832,6 +905,16 @@ async function requestDeterministicPipeline(prompt, spec) {
     try {
       payload = await res.json();
     } catch (_) {}
+
+    console.info('[Kivrio trace][deterministic-response]', {
+      pipeline: spec.pipeline,
+      status: res.status,
+      ok: res.ok,
+      payloadStatus: String(payload?.status || ''),
+      reason: String(payload?.reason || ''),
+      hasHtml: Boolean(extractDeterministicPayloadData(payload)?.html || payload?.html),
+      message: readDeterministicFallbackMessage(payload),
+    });
 
     if (!res.ok) {
       const reason = String(payload?.reason || `http-${res.status}`);
@@ -859,6 +942,10 @@ async function requestDeterministicPipeline(prompt, spec) {
     const responseData = extractDeterministicPayloadData(payload);
     const html = spec.wrapHtml(responseData?.html || payload?.html || '');
     if (!html) {
+      console.info('[Kivrio trace][deterministic-missing-html]', {
+        pipeline: spec.pipeline,
+        message: spec.missingHtmlMessage,
+      });
       return createPipelineAttempt({
         matched: true,
         rawPayload: payload,
@@ -893,6 +980,17 @@ const VARIATION_PIPELINE_SPEC = {
   createGuidancePayload: createVariationGuidancePayload,
   wrapHtml: wrapVariationTableHtml,
   missingHtmlMessage: 'La reponse deterministe ne contient pas de tableau exploitable.',
+};
+
+const SYSTEM_PIPELINE_SPEC = {
+  label: 'system-solve',
+  pipeline: 'deterministic-system',
+  endpoint: '/api/math/system-solve',
+  looksLikeRequest: looksLikeSystemSolveRequest,
+  shouldShowGuidance: shouldShowSystemGuidance,
+  createGuidancePayload: createSystemGuidancePayload,
+  wrapHtml: wrapSystemSolveHtml,
+  missingHtmlMessage: 'La reponse deterministe ne contient pas de rendu exploitable.',
 };
 
 const EQUATION_PIPELINE_SPEC = {
@@ -952,6 +1050,7 @@ const INTEGRAL_PIPELINE_SPEC = {
 
 const DETERMINISTIC_PIPELINE_SPECS = [
   VARIATION_PIPELINE_SPEC,
+  SYSTEM_PIPELINE_SPEC,
   EQUATION_PIPELINE_SPEC,
   ODE_PIPELINE_SPEC,
   DERIVATIVE_PIPELINE_SPEC,
@@ -1103,6 +1202,23 @@ function buildEquationContextSummary(rawPayload) {
   return lines.join('\n') || 'Une equation a ete resolue par le pipeline deterministe.';
 }
 
+function buildSystemContextSummary(rawPayload) {
+  const payload = extractDeterministicPayloadData(rawPayload);
+  const system = latexToPlainMath(payload?.systemLatex || '');
+  const rows = Array.isArray(payload?.solutionRows) ? payload.solutionRows : [];
+  const lines = [];
+  if (system) lines.push(`Systeme : ${system}`);
+  for (const row of rows) {
+    const variable = String(row?.variable || '').trim();
+    const value = latexToPlainMath(row?.valueLatex || '');
+    if (variable && value) lines.push(`${variable} = ${value}`);
+  }
+  if (!rows.length && String(payload?.solutionType || '').trim() === 'none') {
+    lines.push('Aucune solution.');
+  }
+  return lines.join('\n') || 'Un systeme a ete resolu par le pipeline deterministe.';
+}
+
 function buildDerivativeContextSummary(rawPayload) {
   const payload = extractDeterministicPayloadData(rawPayload);
   const expression = latexToPlainMath(payload?.expressionLatex || '');
@@ -1164,6 +1280,8 @@ function buildDeterministicContextSummary(spec, rawPayload) {
   switch (spec?.pipeline) {
     case VARIATION_PIPELINE_SPEC.pipeline:
       return buildVariationContextSummary(rawPayload);
+    case SYSTEM_PIPELINE_SPEC.pipeline:
+      return buildSystemContextSummary(rawPayload);
     case EQUATION_PIPELINE_SPEC.pipeline:
       return buildEquationContextSummary(rawPayload);
     case DERIVATIVE_PIPELINE_SPEC.pipeline:
@@ -1733,8 +1851,19 @@ export async function sendCurrent() {
       await mountHistory();
     } catch (_) {}
 
-    const deterministicPrompt = prepared.promptText || text;
-    const canUseDeterministicPipelines = !prepared.imagePayloads?.length && detachedUploads.length === 0;
+    const deterministicPrompt = prepared.deterministicPromptText || prepared.promptText || text;
+    const canUseDeterministicPipelines = Boolean(
+      prepared.allowDeterministicPipelines
+      || (!prepared.imagePayloads?.length && detachedUploads.length === 0),
+    );
+    console.info('[Kivrio trace][sendCurrent]', {
+      model,
+      hasImageUploads: detachedUploads.some((item) => item?.kind === 'image'),
+      imagePayloadCount: Array.isArray(prepared.imagePayloads) ? prepared.imagePayloads.length : 0,
+      allowDeterministicPipelines: Boolean(prepared.allowDeterministicPipelines),
+      canUseDeterministicPipelines,
+      deterministicPromptPreview: tracePromptPreview(deterministicPrompt),
+    });
     if (canUseDeterministicPipelines) {
       const segmentedReply = await attemptSegmentedExerciseReply({
         content: deterministicPrompt,
@@ -1745,6 +1874,10 @@ export async function sendCurrent() {
         sys,
       });
       if (segmentedReply?.answerText) {
+        console.info('[Kivrio trace][segmented-route]', {
+          handled: true,
+          answerPreview: tracePromptPreview(segmentedReply.answerText, 300),
+        });
         return;
       }
 
@@ -1755,11 +1888,25 @@ export async function sendCurrent() {
         model,
       });
       if (deterministicReply.handled) {
+        console.info('[Kivrio trace][deterministic-route]', {
+          handled: true,
+          pipeline: deterministicReply?.spec?.pipeline || deterministicReply?.payload?.pipeline || '',
+        });
         aiB = deterministicReply.bubble;
         return;
       }
+      console.info('[Kivrio trace][deterministic-route]', {
+        handled: false,
+        pipeline: deterministicReply?.spec?.pipeline || '',
+        fallbackReason: deterministicReply?.attempt?.fallbackReason || '',
+        fallbackMessage: deterministicReply?.attempt?.fallbackMessage || '',
+      });
     }
 
+    console.info('[Kivrio trace][model-fallback]', {
+      model,
+      promptPreview: tracePromptPreview(prepared.promptText || text),
+    });
     if (!aiB) aiB = renderMsg('assistant', '', { model });
     const assistantState = createAssistantStreamState();
     try {

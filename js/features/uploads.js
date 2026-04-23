@@ -312,6 +312,8 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
     return {
       ok: true,
       promptText: String(userText || '').trim(),
+      deterministicPromptText: String(userText || '').trim(),
+      allowDeterministicPipelines: false,
       imagePayloads: [],
       suggestedTitle: String(userText || '').trim(),
     };
@@ -336,6 +338,8 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
 
   const imagePayloads = [];
   let promptText = String(userText || '').trim();
+  let deterministicPromptText = String(userText || '').trim();
+  let allowDeterministicPipelines = false;
 
   if (canModelReadFiles(model)) {
     for (const item of imageItems) {
@@ -375,6 +379,18 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
       'Transcription OCR des images jointes:',
       ocrResultsToPromptBlocks(validOcrResults),
     );
+    deterministicPromptText = [
+      deterministicPromptText,
+      ...validOcrResults.map((item) => String(item?.markdown || '').trim()).filter(Boolean),
+    ].filter(Boolean).join('\n\n').trim();
+    allowDeterministicPipelines = Boolean(deterministicPromptText);
+    console.info('[Kivrio trace][image-ocr]', {
+      model: String(model || ''),
+      imageCount: imageItems.length,
+      ocrResultCount: validOcrResults.length,
+      allowDeterministicPipelines,
+      deterministicPromptPreview: deterministicPromptText.slice(0, 500),
+    });
     if (typeof onStatus === 'function') onStatus('ocr-complete');
   } else if (!promptText && textFragments.length) {
     promptText = defaultPromptForAttachments({ mode: 'text', userText });
@@ -391,6 +407,8 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
   return {
     ok: true,
     promptText,
+    deterministicPromptText,
+    allowDeterministicPipelines,
     imagePayloads,
     suggestedTitle: String(userText || '').trim() || items[0]?.file?.name || 'Piece jointe',
   };

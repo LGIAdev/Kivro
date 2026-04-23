@@ -2,6 +2,17 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.23] - 2026-04-23
+
+### Added
+- Added release notes for `Kivrio 2026.4.23`.
+- Added a deterministic local system-solve pipeline for 2x2 systems, including OCR-derived image input routed before the language model fallback.
+
+### Changed
+- Added a controlled SymPy fallback for deterministic equation, derivative, and integral pipelines so valid requests can still resolve locally when direct handling is insufficient.
+- Improved OCR and LaTeX normalization for system solving so image transcriptions such as `aligned` and `cases` blocks are parsed more reliably.
+- Fixed the `/api/math/system-solve` backend route and updated the visible application version for `Kivrio 2026.4.23`.
+
 ## [2026.4.22] - 2026-04-22
 
 ### Added

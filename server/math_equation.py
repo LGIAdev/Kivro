@@ -14,6 +14,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+from math_sympy_fallback import ControlledSympyFallbackError, execute_controlled_sympy
+
 
 TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -480,8 +482,90 @@ def _extract_finite_real_points(solution_set: sp.Set, domain: sp.Set) -> list[sp
     return None
 
 
-def _is_log_exp_equation(expr: sp.Expr) -> bool:
-    return bool(expr.has(sp.log) or expr.has(sp.exp))
+def _build_equation_sympy_fallback_code(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> str:
+    _ = (relation, symbol, domain)
+    return (
+        "relation = relation_input\n"
+        "symbol = symbol_input\n"
+        "domain = domain_input\n"
+        "effective_domain = continuous_domain(relation, symbol, S.Reals)\n"
+        "if domain != S.Reals:\n"
+        "    effective_domain = sp.Intersection(effective_domain, domain)\n"
+        "intervals = flatten_real_intervals(effective_domain)\n"
+        "fallback_roots = []\n"
+        "if intervals:\n"
+        "    for interval in intervals:\n"
+        "        for seed in interval_seed_values(interval):\n"
+        "            if not value_in_interval(seed, interval):\n"
+        "                continue\n"
+        "            try:\n"
+        "                root = sp.nsolve(relation, symbol, seed, tol=1e-14, maxsteps=100, prec=50)\n"
+        "            except Exception:\n"
+        "                continue\n"
+        "            numeric_root = coerce_real_float(root)\n"
+        "            if numeric_root is None or not value_in_interval(numeric_root, interval):\n"
+        "                continue\n"
+        "            residual = coerce_real_float(relation.subs(symbol, numeric_root))\n"
+        "            if residual is None or abs(residual) > 1e-7:\n"
+        "                continue\n"
+        "            add_unique_root(fallback_roots, sp.Float(numeric_root, 15))\n"
+    )
+
+
+def _try_numeric_equation_fallback(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> list[sp.Expr]:
+    code = _build_equation_sympy_fallback_code(relation, symbol, domain)
+    namespace = {
+        "sp": sp,
+        "S": S,
+        "abs": abs,
+        "relation_input": relation,
+        "symbol_input": symbol,
+        "domain_input": domain,
+        "continuous_domain": continuous_domain,
+        "flatten_real_intervals": _flatten_real_intervals,
+        "interval_seed_values": _interval_seed_values,
+        "value_in_interval": _value_in_interval,
+        "coerce_real_float": _coerce_real_float,
+        "add_unique_root": _add_unique_root,
+    }
+    result = execute_controlled_sympy(code, namespace)
+    roots = result.get("fallback_roots")
+    if not isinstance(roots, list):
+        raise ControlledSympyFallbackError(
+            "Le fallback SymPy n'a pas retourne de liste de solutions.",
+            code="fallback_invalid_result",
+        )
+    return _sort_solutions(roots)
+
+
+def _try_controlled_sympy_equation_fallback(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> dict | None:
+    if domain != S.Reals:
+        return None
+
+    try:
+        numeric_roots = _try_numeric_equation_fallback(relation, symbol, domain)
+    except ControlledSympyFallbackError:
+        return None
+
+    if not numeric_roots:
+        return None
+
+    payload = _build_finite_solution_payload(numeric_roots, exact=False)
+    payload["usedSympyFallback"] = True
+    payload["sympyFallbackStrategy"] = "controlled-equation-fallback"
+    return payload
 
 
 def _try_exact_conditionset_solutions(
@@ -686,10 +770,9 @@ def _try_conditionset_resolution(
     if exact_payload:
         return exact_payload
 
-    if _is_log_exp_equation(relation) and domain == S.Reals:
-        numeric_roots = _find_numeric_roots(relation, symbol, domain)
-        if numeric_roots:
-            return _build_finite_solution_payload(numeric_roots, exact=False)
+    fallback_payload = _try_controlled_sympy_equation_fallback(relation, symbol, domain)
+    if fallback_payload:
+        return fallback_payload
 
     return _try_prove_no_real_solution(relation, symbol, domain)
 
