@@ -76,6 +76,18 @@ function saveEmbeddedVariationHtml(source, saveVariationTable){
   );
 }
 
+function restoreSystemSolveToken(token){
+  return typeof token === 'string' ? token : '';
+}
+
+function saveEmbeddedSystemHtml(source, saveSystemSolve){
+  if (!source) return '';
+  return String(source).replace(
+    /<system-solve-html>([\s\S]*?)<\/system-solve-html>/gi,
+    (_, html) => saveSystemSolve(sanitizeSpecializedHtmlFragment(html)),
+  );
+}
+
 function restoreEquationSolveToken(token){
   return typeof token === 'string' ? token : '';
 }
@@ -146,7 +158,7 @@ function sanitizeSpecializedHtmlFragment(source){
   return html.trim();
 }
 
-const SPECIALIZED_HTML_ONLY_RE = /^\s*(?:<variation-table-html>[\s\S]*<\/variation-table-html>|<equation-solve-html>[\s\S]*<\/equation-solve-html>|<derivative-html>[\s\S]*<\/derivative-html>|<limit-html>[\s\S]*<\/limit-html>|<integral-html>[\s\S]*<\/integral-html>|<ode-html>[\s\S]*<\/ode-html>)\s*$/i;
+const SPECIALIZED_HTML_ONLY_RE = /^\s*(?:<variation-table-html>[\s\S]*<\/variation-table-html>|<system-solve-html>[\s\S]*<\/system-solve-html>|<equation-solve-html>[\s\S]*<\/equation-solve-html>|<derivative-html>[\s\S]*<\/derivative-html>|<limit-html>[\s\S]*<\/limit-html>|<integral-html>[\s\S]*<\/integral-html>|<ode-html>[\s\S]*<\/ode-html>)\s*$/i;
 
 function isPythonFenceLanguage(lang){
   return ['python', 'py', 'pyodide'].includes(String(lang || '').toLowerCase());
@@ -887,6 +899,7 @@ function renderMarkdown(src, options = {}){
   const codeTokens = [];
   const mathTokens = [];
   const variationTableTokens = [];
+  const systemSolveTokens = [];
   const equationSolveTokens = [];
   const derivativeTokens = [];
   const limitTokens = [];
@@ -905,6 +918,11 @@ function renderMarkdown(src, options = {}){
   const saveVariationTable = (token) => {
     const marker = `@@VAR_TABLE_${variationTableTokens.length}@@`;
     variationTableTokens.push(token);
+    return marker;
+  };
+  const saveSystemSolve = (token) => {
+    const marker = `@@SYSTEM_SOLVE_${systemSolveTokens.length}@@`;
+    systemSolveTokens.push(token);
     return marker;
   };
   const saveEquationSolve = (token) => {
@@ -948,6 +966,7 @@ function renderMarkdown(src, options = {}){
   // 2.2 Échapper le HTML restant
   if (allowSpecializedHtml) {
     s = saveEmbeddedVariationHtml(s, saveVariationTable);
+    s = saveEmbeddedSystemHtml(s, saveSystemSolve);
     s = saveEmbeddedEquationHtml(s, saveEquationSolve);
     s = saveEmbeddedDerivativeHtml(s, saveDerivative);
     s = saveEmbeddedLimitHtml(s, saveLimit);
@@ -997,7 +1016,7 @@ function renderMarkdown(src, options = {}){
     .replace(/`([^`\n]+)`/g, '<code>$1</code>');
 		
   // 2.7 Paragraphes : regrouper ce qui n'est pas déjà un bloc HTML connu
-  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@(?:CODE|MATH|VAR_TABLE|EQ_SOLVE|DERIVATIVE|LIMIT|INTEGRAL|ODE)_)/;
+  const BLOCK_START = /^(<h\d|<ul>|<pre>|<blockquote>|<table|<thead|<tbody|<tr|@@(?:CODE|MATH|VAR_TABLE|SYSTEM_SOLVE|EQ_SOLVE|DERIVATIVE|LIMIT|INTEGRAL|ODE)_)/;
   s = s
     .split(/\n{2,}/)
     .map(chunk => {
@@ -1011,6 +1030,7 @@ function renderMarkdown(src, options = {}){
   s = s.replace(/@@MATH_(\d+)@@/g, (_, i)=> restoreMathToken(mathTokens[Number(i)]));
   s = s.replace(/@@CODE_(\d+)@@/g, (_, i)=> restoreCodeToken(codeTokens[Number(i)]));
   s = s.replace(/@@VAR_TABLE_(\d+)@@/g, (_, i)=> restoreVariationTableToken(variationTableTokens[Number(i)]));
+  s = s.replace(/@@SYSTEM_SOLVE_(\d+)@@/g, (_, i)=> restoreSystemSolveToken(systemSolveTokens[Number(i)]));
   s = s.replace(/@@EQ_SOLVE_(\d+)@@/g, (_, i)=> restoreEquationSolveToken(equationSolveTokens[Number(i)]));
   s = s.replace(/@@DERIVATIVE_(\d+)@@/g, (_, i)=> restoreDerivativeToken(derivativeTokens[Number(i)]));
   s = s.replace(/@@LIMIT_(\d+)@@/g, (_, i)=> restoreLimitToken(limitTokens[Number(i)]));

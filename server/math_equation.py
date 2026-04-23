@@ -14,6 +14,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+from math_sympy_fallback import ControlledSympyFallbackError, execute_controlled_sympy
+
 
 TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -265,7 +267,7 @@ def _set_label(expr: sp.Set | sp.Expr) -> str:
     return sp.latex(sp.simplify(expr))
 
 
-def _flatten_real_intervals(domain: sp.Set) -> list[Interval]:
+def _flatten_real_intervals(domain: sp.Set) -> list[Interval] | None:
     if domain is S.EmptySet:
         return []
     if domain == S.Reals:
@@ -275,12 +277,15 @@ def _flatten_real_intervals(domain: sp.Set) -> list[Interval]:
     if isinstance(domain, Union):
         intervals: list[Interval] = []
         for arg in domain.args:
-            intervals.extend(_flatten_real_intervals(arg))
+            flattened = _flatten_real_intervals(arg)
+            if flattened is None:
+                return None
+            intervals.extend(flattened)
         return sorted(
             intervals,
             key=lambda item: float(sp.N(item.start)) if item.start.is_finite else float("-inf"),
         )
-    return []
+    return None
 
 
 def _coerce_real_float(value: sp.Expr) -> float | None:
@@ -378,11 +383,192 @@ def _build_finite_solution_payload(values: Iterable[sp.Expr], *, exact: bool) ->
     }
 
 
-def _is_log_exp_equation(expr: sp.Expr) -> bool:
-    return bool(expr.has(sp.log) or expr.has(sp.exp))
+def _build_none_solution_payload() -> dict:
+    return {
+        "solutionType": "none",
+        "solutionsLatex": [],
+        "solutionSetLatex": r"\varnothing",
+        "hasExactSolution": True,
+    }
 
 
-def _try_exact_transcendental_solutions(
+def _effective_real_domain(relation: sp.Expr, symbol: sp.Symbol, domain: sp.Set) -> sp.Set:
+    effective_domain = continuous_domain(relation, symbol, S.Reals)
+    if domain != S.Reals:
+        try:
+            effective_domain = sp.Intersection(effective_domain, domain)
+        except Exception:
+            pass
+    return effective_domain
+
+
+def _point_in_domain(value: sp.Expr, domain: sp.Set) -> bool:
+    contains = domain.contains(value)
+    if contains == False:
+        return False
+    if _is_sympy_true(contains):
+        return True
+
+    numeric = _coerce_real_float(value)
+    if numeric is None:
+        return False
+    numeric_contains = domain.contains(sp.Float(numeric, 15))
+    return numeric_contains != False
+
+
+def _append_unique_symbolic_point(points: list[sp.Expr], candidate: sp.Expr, *, tolerance: float = 1e-8) -> None:
+    value = sp.simplify(candidate)
+    candidate_numeric = _coerce_real_float(value)
+    for existing in points:
+        try:
+            if sp.simplify(existing - value) == 0:
+                return
+        except Exception:
+            pass
+        existing_numeric = _coerce_real_float(existing)
+        if existing_numeric is None or candidate_numeric is None:
+            continue
+        if abs(existing_numeric - candidate_numeric) <= tolerance:
+            return
+    points.append(value)
+
+
+def _extract_finite_real_points(solution_set: sp.Set, domain: sp.Set) -> list[sp.Expr] | None:
+    if solution_set is S.EmptySet:
+        return []
+
+    if isinstance(solution_set, sp.FiniteSet):
+        points: list[sp.Expr] = []
+        for candidate in solution_set:
+            value = sp.simplify(candidate)
+            if domain == S.Reals and value.is_real is False:
+                continue
+            if not _point_in_domain(value, domain):
+                continue
+            _append_unique_symbolic_point(points, value)
+        return _sort_solutions(points)
+
+    if isinstance(solution_set, Union):
+        points: list[sp.Expr] = []
+        for arg in solution_set.args:
+            sub_points = _extract_finite_real_points(arg, domain)
+            if sub_points is None:
+                return None
+            for value in sub_points:
+                _append_unique_symbolic_point(points, value)
+        return _sort_solutions(points)
+
+    if isinstance(solution_set, sp.Intersection):
+        for arg in solution_set.args:
+            sub_points = _extract_finite_real_points(arg, domain)
+            if sub_points is None:
+                continue
+
+            points: list[sp.Expr] = []
+            for value in sub_points:
+                allowed = True
+                for other in solution_set.args:
+                    contains = other.contains(value)
+                    if contains == False:
+                        allowed = False
+                        break
+                    if not _is_sympy_true(contains) and not _point_in_domain(value, other):
+                        allowed = False
+                        break
+                if allowed:
+                    _append_unique_symbolic_point(points, value)
+            return _sort_solutions(points)
+
+    return None
+
+
+def _build_equation_sympy_fallback_code(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> str:
+    _ = (relation, symbol, domain)
+    return (
+        "relation = relation_input\n"
+        "symbol = symbol_input\n"
+        "domain = domain_input\n"
+        "effective_domain = continuous_domain(relation, symbol, S.Reals)\n"
+        "if domain != S.Reals:\n"
+        "    effective_domain = sp.Intersection(effective_domain, domain)\n"
+        "intervals = flatten_real_intervals(effective_domain)\n"
+        "fallback_roots = []\n"
+        "if intervals:\n"
+        "    for interval in intervals:\n"
+        "        for seed in interval_seed_values(interval):\n"
+        "            if not value_in_interval(seed, interval):\n"
+        "                continue\n"
+        "            try:\n"
+        "                root = sp.nsolve(relation, symbol, seed, tol=1e-14, maxsteps=100, prec=50)\n"
+        "            except Exception:\n"
+        "                continue\n"
+        "            numeric_root = coerce_real_float(root)\n"
+        "            if numeric_root is None or not value_in_interval(numeric_root, interval):\n"
+        "                continue\n"
+        "            residual = coerce_real_float(relation.subs(symbol, numeric_root))\n"
+        "            if residual is None or abs(residual) > 1e-7:\n"
+        "                continue\n"
+        "            add_unique_root(fallback_roots, sp.Float(numeric_root, 15))\n"
+    )
+
+
+def _try_numeric_equation_fallback(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> list[sp.Expr]:
+    code = _build_equation_sympy_fallback_code(relation, symbol, domain)
+    namespace = {
+        "sp": sp,
+        "S": S,
+        "abs": abs,
+        "relation_input": relation,
+        "symbol_input": symbol,
+        "domain_input": domain,
+        "continuous_domain": continuous_domain,
+        "flatten_real_intervals": _flatten_real_intervals,
+        "interval_seed_values": _interval_seed_values,
+        "value_in_interval": _value_in_interval,
+        "coerce_real_float": _coerce_real_float,
+        "add_unique_root": _add_unique_root,
+    }
+    result = execute_controlled_sympy(code, namespace)
+    roots = result.get("fallback_roots")
+    if not isinstance(roots, list):
+        raise ControlledSympyFallbackError(
+            "Le fallback SymPy n'a pas retourne de liste de solutions.",
+            code="fallback_invalid_result",
+        )
+    return _sort_solutions(roots)
+
+
+def _try_controlled_sympy_equation_fallback(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> dict | None:
+    if domain != S.Reals:
+        return None
+
+    try:
+        numeric_roots = _try_numeric_equation_fallback(relation, symbol, domain)
+    except ControlledSympyFallbackError:
+        return None
+
+    if not numeric_roots:
+        return None
+
+    payload = _build_finite_solution_payload(numeric_roots, exact=False)
+    payload["usedSympyFallback"] = True
+    payload["sympyFallbackStrategy"] = "controlled-equation-fallback"
+    return payload
+
+
+def _try_exact_conditionset_solutions(
     left_expr: sp.Expr,
     right_expr: sp.Expr,
     relation: sp.Expr,
@@ -435,15 +621,9 @@ def _find_numeric_roots(
     symbol: sp.Symbol,
     domain: sp.Set,
 ) -> list[sp.Expr]:
-    effective_domain = continuous_domain(relation, symbol, S.Reals)
-    if domain != S.Reals:
-        try:
-            effective_domain = sp.Intersection(effective_domain, domain)
-        except Exception:
-            pass
-
+    effective_domain = _effective_real_domain(relation, symbol, domain)
     intervals = _flatten_real_intervals(effective_domain)
-    if not intervals:
+    if intervals is None or not intervals:
         return []
 
     roots: list[sp.Expr] = []
@@ -470,27 +650,131 @@ def _find_numeric_roots(
     return _sort_solutions(roots)
 
 
-def _try_special_transcendental_resolution(
+def _sign_from_expr(value: sp.Expr, *, tolerance: float = 1e-8) -> int | None:
+    simplified = sp.simplify(value)
+    if simplified == sp.oo:
+        return 1
+    if simplified == -sp.oo:
+        return -1
+    if simplified == 0 or simplified.is_zero is True:
+        return 0
+    if simplified.is_positive is True:
+        return 1
+    if simplified.is_negative is True:
+        return -1
+
+    numeric = _coerce_real_float(simplified)
+    if numeric is None:
+        return None
+    if numeric > tolerance:
+        return 1
+    if numeric < -tolerance:
+        return -1
+    return 0
+
+
+def _evaluate_relation_sign(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    value: sp.Expr,
+    *,
+    direction: str | None = None,
+) -> int | None:
+    try:
+        if value in {sp.oo, -sp.oo}:
+            evaluated = sp.limit(relation, symbol, value)
+        elif direction is None:
+            evaluated = sp.simplify(relation.subs(symbol, value))
+        else:
+            evaluated = sp.limit(relation, symbol, value, dir=direction)
+    except Exception:
+        return None
+    return _sign_from_expr(evaluated)
+
+
+def _interval_boundary_sign(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    interval: Interval,
+    *,
+    left: bool,
+) -> int | None:
+    boundary = interval.start if left else interval.end
+    if boundary in {sp.oo, -sp.oo}:
+        return _evaluate_relation_sign(relation, symbol, boundary)
+
+    is_open = interval.left_open if left else interval.right_open
+    if not is_open:
+        return _evaluate_relation_sign(relation, symbol, boundary)
+    return _evaluate_relation_sign(relation, symbol, boundary, direction='+' if left else '-')
+
+
+def _try_prove_no_real_solution(
+    relation: sp.Expr,
+    symbol: sp.Symbol,
+    domain: sp.Set,
+) -> dict | None:
+    if domain != S.Reals:
+        return None
+
+    effective_domain = _effective_real_domain(relation, symbol, domain)
+    intervals = _flatten_real_intervals(effective_domain)
+    if intervals is None:
+        return None
+    if not intervals:
+        return _build_none_solution_payload()
+
+    derivative = sp.simplify(sp.diff(relation, symbol))
+    for interval in intervals:
+        critical_points: list[sp.Expr]
+        if derivative.has(symbol):
+            try:
+                derivative_solutions = sp.solveset(derivative, symbol, interval)
+            except Exception:
+                return None
+            critical_points = _extract_finite_real_points(derivative_solutions, interval)
+            if critical_points is None:
+                return None
+        else:
+            if _sign_from_expr(derivative) is None:
+                return None
+            critical_points = []
+
+        interval_signs: list[int] = []
+        for is_left in (True, False):
+            sign = _interval_boundary_sign(relation, symbol, interval, left=is_left)
+            if sign is None or sign == 0:
+                return None
+            interval_signs.append(sign)
+
+        for point in critical_points:
+            sign = _evaluate_relation_sign(relation, symbol, point)
+            if sign is None or sign == 0:
+                return None
+            interval_signs.append(sign)
+
+        if len(set(interval_signs)) != 1:
+            return None
+
+    return _build_none_solution_payload()
+
+
+def _try_conditionset_resolution(
     left_expr: sp.Expr,
     right_expr: sp.Expr,
     relation: sp.Expr,
     symbol: sp.Symbol,
     domain: sp.Set,
 ) -> dict | None:
-    if not _is_log_exp_equation(relation):
-        return None
-
-    exact_payload = _try_exact_transcendental_solutions(left_expr, right_expr, relation, symbol, domain)
+    exact_payload = _try_exact_conditionset_solutions(left_expr, right_expr, relation, symbol, domain)
     if exact_payload:
         return exact_payload
 
-    if domain != S.Reals:
-        return None
+    fallback_payload = _try_controlled_sympy_equation_fallback(relation, symbol, domain)
+    if fallback_payload:
+        return fallback_payload
 
-    numeric_roots = _find_numeric_roots(relation, symbol, domain)
-    if not numeric_roots:
-        return None
-    return _build_finite_solution_payload(numeric_roots, exact=False)
+    return _try_prove_no_real_solution(relation, symbol, domain)
 
 
 def parse_equation(expression: str, variable: str | None = None) -> tuple[sp.Expr, sp.Expr, sp.Symbol, sp.Set]:
@@ -579,7 +863,7 @@ def analyze_equation(expression: str, variable: str | None = None) -> dict:
         ) from exc
 
     if isinstance(solution_set, sp.ConditionSet):
-        normalized = _try_special_transcendental_resolution(left_expr, right_expr, relation, symbol, domain)
+        normalized = _try_conditionset_resolution(left_expr, right_expr, relation, symbol, domain)
         if not normalized:
             raise EquationAnalysisError(
                 "La resolution symbolique de cette equation reste indeterminee.",

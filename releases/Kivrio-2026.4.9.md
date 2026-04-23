@@ -1,3 +1,5 @@
+# Kivrio 2026.4.9
+
 ## What's Changed
 
 - Secured the local API with session authentication and removed public exposure of internal backend and database files.
@@ -9,4 +11,4 @@
 
 ## Full Changelog
 
-https://github.com/LGIAdev/Kivro/compare/v2026.3.29...v2026.4.9
+https://github.com/LGIAdev/Kivrio/compare/v2026.3.29...v2026.4.9

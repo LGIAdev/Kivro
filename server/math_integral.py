@@ -11,6 +11,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+from math_sympy_fallback import ControlledSympyFallbackError, execute_controlled_sympy
+
 
 TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -32,6 +34,27 @@ ALLOWED_NAMES = {
     "e": sp.E,
     "oo": sp.oo,
 }
+FALLBACK_ALLOWED_NAMES = {
+    **ALLOWED_NAMES,
+    "sinh": sp.sinh,
+    "cosh": sp.cosh,
+    "tanh": sp.tanh,
+    "asinh": sp.asinh,
+    "acosh": sp.acosh,
+    "atanh": sp.atanh,
+    "arcsin": sp.asin,
+    "arccos": sp.acos,
+    "arctan": sp.atan,
+    "sec": sp.sec,
+    "csc": sp.csc,
+    "cot": sp.cot,
+    "sech": sp.sech,
+    "csch": sp.csch,
+    "coth": sp.coth,
+    "erf": sp.erf,
+    "gamma": sp.gamma,
+}
+FUNCTION_CALL_RE = re.compile(r"\b([A-Za-z]\w*)\s*\(")
 FUNCTION_IN_TEXT_RE = re.compile(r"([a-zA-Z]\w*|y)\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)")
 WITH_RESPECT_TO_RE = re.compile(r"\bpar\s+rapport\s+a\s+([a-zA-Z])\b", re.IGNORECASE)
 INTEGRAL_BETWEEN_RE = re.compile(
@@ -45,11 +68,11 @@ INTEGRAL_SIMPLE_RE = re.compile(
     re.IGNORECASE,
 )
 SYMBOLIC_DEFINITE_RE = re.compile(
-    r"^\s*(?:\\int|∫|int)\s*_\{?\s*(.+?)\s*\}?\s*\^\{?\s*(.+?)\s*\}?\s*(.+?)\s*d([a-zA-Z])\s*$",
+    r"^\s*(?:\\int|∫|int\b)\s*_\{?\s*(.+?)\s*\}?\s*\^\{?\s*(.+?)\s*\}?\s*(.+?)\s*d([a-zA-Z])\s*$",
     re.IGNORECASE,
 )
 SYMBOLIC_INDEFINITE_RE = re.compile(
-    r"^\s*(?:\\int|∫|int)\s*(.+?)\s*d([a-zA-Z])\s*$",
+    r"^\s*(?:\\int|∫|int\b)\s*(.+?)\s*d([a-zA-Z])\s*$",
     re.IGNORECASE,
 )
 TRAILING_CONTEXT_RE = re.compile(
@@ -70,6 +93,7 @@ LEADING_REQUEST_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+PLACEHOLDER_TOKENS = {"de", "du", "la", "le", "les", "l", "fonction", "integrale", "primitive"}
 
 
 class IntegralAnalysisError(ValueError):
@@ -114,6 +138,13 @@ def _build_local_dict(variable_name: str, *, real: bool) -> tuple[dict[str, obje
     return local_dict, symbol
 
 
+def _build_fallback_local_dict(variable_name: str, *, real: bool) -> tuple[dict[str, object], sp.Symbol]:
+    local_dict = {**FALLBACK_ALLOWED_NAMES, **_symbol_pool(real=real)}
+    symbol = sp.Symbol(variable_name, real=real)
+    local_dict[variable_name] = symbol
+    return local_dict, symbol
+
+
 def _normalize_expression_candidate(text: str) -> str:
     candidate = _normalize_math_text(text).strip()
     if not candidate:
@@ -146,6 +177,123 @@ def _strip_leading_request_phrases(text: str) -> str:
 
 def _expr_label(expr: sp.Expr) -> str:
     return sp.latex(sp.simplify(expr))
+
+
+def _is_placeholder_integrand(expr_text: str) -> bool:
+    tokens = [token.lower() for token in re.findall(r"[A-Za-z]+", str(expr_text or ""))]
+    if not tokens:
+        return True
+    return all(token in PLACEHOLDER_TOKENS for token in tokens)
+
+
+def _build_integral_payload(
+    expression: str,
+    expr: sp.Expr,
+    symbol: sp.Symbol,
+    result: sp.Expr,
+    lower: sp.Expr | None,
+    upper: sp.Expr | None,
+    *,
+    used_sympy_fallback: bool = False,
+) -> dict:
+    if lower is None or upper is None:
+        statement = rf"\int {sp.latex(expr)} \, d{sp.latex(symbol)} = {sp.latex(result)} + C"
+        is_definite = False
+    else:
+        statement = rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(expr)} \, d{sp.latex(symbol)} = {sp.latex(result)}"
+        is_definite = True
+
+    payload = {
+        "ok": True,
+        "pipeline": "deterministic-integral",
+        "expressionInput": str(expression or "").strip(),
+        "variable": str(symbol),
+        "expressionLatex": _expr_label(expr),
+        "integralLatex": sp.latex(result),
+        "integralStatementLatex": statement,
+        "lowerBoundLatex": sp.latex(lower) if lower is not None else "",
+        "upperBoundLatex": sp.latex(upper) if upper is not None else "",
+        "isDefinite": is_definite,
+        "hasExactSolution": True,
+    }
+    if used_sympy_fallback:
+        payload["usedSympyFallback"] = True
+        payload["sympyFallbackStrategy"] = "controlled-integral-fallback"
+    return payload
+
+
+def _should_force_integral_fallback(expression: str) -> bool:
+    try:
+        expr_text, _, _, _ = _extract_integral_candidate(expression)
+    except IntegralAnalysisError:
+        return False
+
+    for match in FUNCTION_CALL_RE.finditer(expr_text):
+        name = str(match.group(1) or "").strip().lower()
+        if not name:
+            continue
+        if name in FALLBACK_ALLOWED_NAMES and name not in ALLOWED_NAMES:
+            return True
+    return False
+
+
+def _build_integral_sympy_fallback_code() -> str:
+    return (
+        "local_dict = fallback_local_dict_input.copy()\n"
+        "symbol = sp.Symbol(variable_name_input, real=True)\n"
+        "local_dict[variable_name_input] = symbol\n"
+        "expr = parse_expr(expression_text_input, local_dict=local_dict, transformations=transformations_input, evaluate=True)\n"
+        "if lower_input is None or upper_input is None:\n"
+        "    result = sp.simplify(sp.integrate(expr, symbol))\n"
+        "else:\n"
+        "    result = sp.simplify(sp.integrate(expr, (symbol, lower_input, upper_input)))\n"
+    )
+
+
+def _try_controlled_sympy_integral_fallback(expression: str, variable: str | None = None) -> dict | None:
+    try:
+        expr_text, hinted_variable, lower, upper = _extract_integral_candidate(expression)
+    except IntegralAnalysisError:
+        return None
+
+    variable_name = str(variable or hinted_variable or "x").strip() or "x"
+    if not re.fullmatch(r"[A-Za-z]", variable_name):
+        return None
+
+    fallback_local_dict, _ = _build_fallback_local_dict(variable_name, real=True)
+    namespace = {
+        "sp": sp,
+        "parse_expr": parse_expr,
+        "expression_text_input": expr_text,
+        "variable_name_input": variable_name,
+        "fallback_local_dict_input": fallback_local_dict,
+        "transformations_input": TRANSFORMATIONS,
+        "lower_input": lower,
+        "upper_input": upper,
+    }
+
+    try:
+        result = execute_controlled_sympy(_build_integral_sympy_fallback_code(), namespace)
+    except ControlledSympyFallbackError:
+        return None
+
+    expr = result.get("expr")
+    symbol = result.get("symbol")
+    integral_result = result.get("result")
+    if not isinstance(expr, sp.Expr) or not isinstance(symbol, sp.Symbol) or not isinstance(integral_result, sp.Expr):
+        return None
+    if integral_result.has(sp.Integral):
+        return None
+
+    return _build_integral_payload(
+        expression,
+        sp.simplify(expr),
+        sp.Symbol(str(symbol), real=True),
+        sp.simplify(integral_result),
+        lower,
+        upper,
+        used_sympy_fallback=True,
+    )
 
 
 def _parse_bound(text: str, local_dict: dict[str, object]) -> sp.Expr:
@@ -201,13 +349,13 @@ def _extract_integral_candidate(text: str) -> tuple[str, str | None, sp.Expr | N
             local_dict, _ = _build_local_dict(variable_name, real=True)
             lower = _parse_bound(between_match.group(2), local_dict)
             upper = _parse_bound(between_match.group(3), local_dict)
-            if expr:
+            if expr and not _is_placeholder_integrand(expr):
                 return expr, variable, lower, upper
 
         simple_match = INTEGRAL_SIMPLE_RE.match(candidate_line)
         if simple_match:
             expr = candidate_from_definition or _normalize_expression_candidate(simple_match.group(1))
-            if expr:
+            if expr and not _is_placeholder_integrand(expr):
                 return expr, variable_from_definition or hinted_variable, None, None
 
     raise IntegralAnalysisError("Aucune integrale exploitable n'a ete detectee.", code="missing_integral")
@@ -244,32 +392,37 @@ def parse_integral_expression(
 
 
 def analyze_integral(expression: str, variable: str | None = None) -> dict:
-    expr, symbol, lower, upper = parse_integral_expression(expression, variable)
+    if _should_force_integral_fallback(expression):
+        fallback_payload = _try_controlled_sympy_integral_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
+
+    try:
+        expr, symbol, lower, upper = parse_integral_expression(expression, variable)
+    except IntegralAnalysisError as exc:
+        if exc.code in {"parse_failed", "invalid_expression"}:
+            fallback_payload = _try_controlled_sympy_integral_fallback(expression, variable)
+            if fallback_payload:
+                return fallback_payload
+        raise
+
     try:
         if lower is None or upper is None:
             result = sp.simplify(sp.integrate(expr, symbol))
-            statement = rf"\int {sp.latex(expr)} \, d{sp.latex(symbol)} = {sp.latex(result)} + C"
-            is_definite = False
         else:
             result = sp.simplify(sp.integrate(expr, (symbol, lower, upper)))
-            statement = rf"\int_{{{sp.latex(lower)}}}^{{{sp.latex(upper)}}} {sp.latex(expr)} \, d{sp.latex(symbol)} = {sp.latex(result)}"
-            is_definite = True
     except Exception as exc:
+        fallback_payload = _try_controlled_sympy_integral_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
         raise IntegralAnalysisError(
             "Impossible de calculer cette integrale de facon fiable.",
             code="integral_failed",
         ) from exc
 
-    return {
-        "ok": True,
-        "pipeline": "deterministic-integral",
-        "expressionInput": str(expression or "").strip(),
-        "variable": str(symbol),
-        "expressionLatex": _expr_label(expr),
-        "integralLatex": sp.latex(result),
-        "integralStatementLatex": statement,
-        "lowerBoundLatex": sp.latex(lower) if lower is not None else "",
-        "upperBoundLatex": sp.latex(upper) if upper is not None else "",
-        "isDefinite": is_definite,
-        "hasExactSolution": True,
-    }
+    if result.has(sp.Integral):
+        fallback_payload = _try_controlled_sympy_integral_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
+
+    return _build_integral_payload(expression, expr, symbol, result, lower, upper)

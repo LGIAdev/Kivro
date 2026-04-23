@@ -36,6 +36,8 @@ import math_limit  # noqa: E402
 import math_limit_render  # noqa: E402
 import math_ode  # noqa: E402
 import math_ode_render  # noqa: E402
+import math_system  # noqa: E402
+import math_system_render  # noqa: E402
 import math_variation  # noqa: E402
 import math_variation_render  # noqa: E402
 import ocr  # noqa: E402
@@ -96,6 +98,13 @@ MATH_GUIDANCE_REASONS = {
         'ambiguous_variable',
         'constant_equation',
         'unsupported_equation',
+    },
+    'deterministic-system': {
+        'missing_system',
+        'invalid_system',
+        'parse_failed',
+        'ambiguous_variable',
+        'unsupported_system',
     },
     'deterministic-derivative': {
         'missing_expression',
@@ -593,6 +602,31 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                     error_type=math_equation.EquationAnalysisError,
                     pipeline='deterministic-equation',
                 )
+                return
+
+            if method == 'POST' and path == '/api/math/system-solve':
+                body = self.read_json_body()
+                expression = ''
+                for key in ('expression', 'content'):
+                    value = body.get(key)
+                    if value:
+                        expression = value
+                        break
+                try:
+                    data = math_system.analyze_system(expression)
+                except math_system.SystemAnalysisError as exc:
+                    self.send_json(
+                        build_math_failure_payload(pipeline='deterministic-system', exc=exc),
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    )
+                    return
+
+                html = math_system_render.build_system_html(data)
+                self.send_json(build_math_success_payload(
+                    pipeline='deterministic-system',
+                    data=data,
+                    html=html,
+                ))
                 return
 
             if method == 'POST' and path == '/api/math/derivative':

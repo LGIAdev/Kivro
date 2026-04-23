@@ -2,63 +2,26 @@
 
 All notable changes to Kivrio are documented in this file.
 
-## [2026.4.18.1] - 2026-04-19
-
-### Fixed
-- Fixed startup conversation state so a blank interface no longer silently reuses the previously active conversation.
-- Fixed equation routing so arbitrary leading words now trigger local guidance instead of unintended equation resolution.
-- Fixed derivative routing so arbitrary leading words now trigger local guidance instead of unintended derivative resolution.
-
-## [2026.4.18] - 2026-04-18
+## [2026.4.23] - 2026-04-23
 
 ### Added
-- Added a more structured deterministic math guidance layer for incomplete or non-parseable local math requests.
-- Added support for Markdown heading levels 4 to 6 in local message rendering.
+- Added release notes for `Kivrio 2026.4.23`.
+- Added a deterministic local system-solve pipeline for 2x2 systems, including OCR-derived image input routed before the language model fallback.
 
 ### Changed
-- Improved the local deterministic router for equations, derivatives, limits, integrals, variations, and ordinary differential equations.
-- Improved parser tolerance for natural French request formulations across the math pipelines.
-- Improved segmented exercise handling for simple numbered sub-questions with lightweight shared context.
-- Improved the frontend/backend contract for deterministic math payloads.
-- Improved the visual layout and consistency of deterministic result cards and specialized math renderers.
-- Updated the visible application version to `Kivrio 2026.4.18`.
-- Updated the README release references and authentication documentation.
+- Added a controlled SymPy fallback for deterministic equation, derivative, and integral pipelines so valid requests can still resolve locally when direct handling is insufficient.
+- Improved OCR and LaTeX normalization for system solving so image transcriptions such as `aligned` and `cases` blocks are parsed more reliably.
+- Fixed the `/api/math/system-solve` backend route and updated the visible application version for `Kivrio 2026.4.23`.
 
-### Fixed
-- Fixed raw Markdown heading markers such as `####` remaining visible in model responses.
-
-## [2026.4.17.1] - 2026-04-18
-
-### Changed
-- Improved the width of deterministic math result cards in the chat interface.
-- Improved the internal layout of equation, integral, derivative, limit, and ordinary differential equation result cards so labels and values use the available width more effectively.
-- Preserved the existing layout of regular LLM response bubbles.
-
-## [2026.4.17] - 2026-04-17
+## [2026.4.22] - 2026-04-22
 
 ### Added
-- Added local guidance messages for deterministic math tools when a math intent is recognized but the expression cannot yet be parsed.
-- Added broader natural-language request prefix stripping across derivative, limit, equation, integral, variation, and ODE analyzers.
-- Added a Windows installer progress window and refreshed the desktop icon asset used by the installer flow.
+- Added release notes for `Kivrio 2026.4.22`.
 
 ### Changed
-- Improved the local math router so more natural French prompts stay on deterministic pipelines instead of falling back immediately to the language model.
-- Improved the variation pipeline so prompts like `etudier les variations de ...` are handled more robustly, with or without an explicit `f(x)=...`.
-- Preserved the language model for explanations and demonstrations while keeping deterministic computation local when the intent is recognized.
-
-## [2026.4.15] - 2026-04-15
-
-### Added
-- Added deterministic local math analyzers for variation tables, equation solving, derivatives, limits, integrals, and ordinary differential equations.
-- Added dedicated backend endpoints for structured local math workflows.
-
-### Changed
-- Improved the Ollama integration to recognize math-oriented prompts and route structured local results back into the chat flow.
-- Improved chat rendering so embedded structured math result blocks are preserved and displayed cleanly in the UI.
-- Refined the styling of rendered variation tables and aligned the visible UI version to `Kivrio 2026.4.15`.
-
-### Security
-- No new security regression was identified during the pre-production validation campaign for this release.
+- Improved deterministic equation solving so valid equations with no real solution can now return `∅` instead of a misleading guidance message in common cases.
+- Improved the equation fallback so malformed input, proven absence of real solutions, and genuinely unresolved cases are handled more clearly.
+- Updated the Windows release metadata and visible application version for `Kivrio 2026.4.22`.
 
 ## [2026.4.9] - 2026-04-09
 

@@ -11,6 +11,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+from math_sympy_fallback import ControlledSympyFallbackError, execute_controlled_sympy
+
 
 TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -31,6 +33,26 @@ ALLOWED_NAMES = {
     "pi": sp.pi,
     "e": sp.E,
     "oo": sp.oo,
+}
+FALLBACK_ALLOWED_NAMES = {
+    **ALLOWED_NAMES,
+    "sinh": sp.sinh,
+    "cosh": sp.cosh,
+    "tanh": sp.tanh,
+    "asinh": sp.asinh,
+    "acosh": sp.acosh,
+    "atanh": sp.atanh,
+    "arcsin": sp.asin,
+    "arccos": sp.acos,
+    "arctan": sp.atan,
+    "sec": sp.sec,
+    "csc": sp.csc,
+    "cot": sp.cot,
+    "sech": sp.sech,
+    "csch": sp.csch,
+    "coth": sp.coth,
+    "erf": sp.erf,
+    "gamma": sp.gamma,
 }
 FUNCTION_IN_TEXT_RE = re.compile(r"([a-zA-Z]\w*|y)\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)")
 WITH_RESPECT_TO_RE = re.compile(r"\bpar\s+rapport\s+a\s+([a-zA-Z])\b", re.IGNORECASE)
@@ -63,6 +85,7 @@ LEADING_REQUEST_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+FUNCTION_CALL_RE = re.compile(r"\b([A-Za-z]\w*)\s*\(")
 
 
 class DerivativeAnalysisError(ValueError):
@@ -101,6 +124,13 @@ def _symbol_pool(*, real: bool) -> dict[str, sp.Symbol]:
 
 def _build_local_dict(variable_name: str, *, real: bool) -> tuple[dict[str, object], sp.Symbol]:
     local_dict = {**ALLOWED_NAMES, **_symbol_pool(real=real)}
+    symbol = sp.Symbol(variable_name, real=real)
+    local_dict[variable_name] = symbol
+    return local_dict, symbol
+
+
+def _build_fallback_local_dict(variable_name: str, *, real: bool) -> tuple[dict[str, object], sp.Symbol]:
+    local_dict = {**FALLBACK_ALLOWED_NAMES, **_symbol_pool(real=real)}
     symbol = sp.Symbol(variable_name, real=real)
     local_dict[variable_name] = symbol
     return local_dict, symbol
@@ -192,6 +222,99 @@ def _expr_label(expr: sp.Expr) -> str:
     return sp.latex(sp.simplify(expr))
 
 
+def _build_derivative_payload(
+    expression: str,
+    expr: sp.Expr,
+    symbol: sp.Symbol,
+    derivative: sp.Expr,
+    *,
+    used_sympy_fallback: bool = False,
+) -> dict:
+    payload = {
+        "ok": True,
+        "pipeline": "deterministic-derivative",
+        "expressionInput": str(expression or "").strip(),
+        "variable": str(symbol),
+        "expressionLatex": _expr_label(expr),
+        "derivativeLatex": _expr_label(derivative),
+        "derivativeOrder": 1,
+        "hasExactSolution": True,
+    }
+    if used_sympy_fallback:
+        payload["usedSympyFallback"] = True
+        payload["sympyFallbackStrategy"] = "controlled-derivative-fallback"
+    return payload
+
+
+def _should_force_derivative_fallback(expression: str) -> bool:
+    try:
+        expr_text, _ = _extract_derivative_candidate(expression)
+    except DerivativeAnalysisError:
+        return False
+
+    for match in FUNCTION_CALL_RE.finditer(expr_text):
+        name = str(match.group(1) or "").strip().lower()
+        if not name:
+            continue
+        if name in FALLBACK_ALLOWED_NAMES and name not in ALLOWED_NAMES:
+            return True
+    return False
+
+
+def _build_derivative_sympy_fallback_code() -> str:
+    return (
+        "local_dict = fallback_local_dict_input.copy()\n"
+        "symbol = sp.Symbol(variable_name_input, real=True)\n"
+        "local_dict[variable_name_input] = symbol\n"
+        "expr = parse_expr(expression_text_input, local_dict=local_dict, transformations=transformations_input, evaluate=True)\n"
+        "derivative = sp.simplify(sp.diff(expr, symbol))\n"
+        "if derivative.has(sp.Derivative):\n"
+        "    derivative = sp.simplify(sp.Derivative(expr, symbol, evaluate=True).doit())\n"
+    )
+
+
+def _try_controlled_sympy_derivative_fallback(expression: str, variable: str | None = None) -> dict | None:
+    try:
+        expr_text, hinted_variable = _extract_derivative_candidate(expression)
+    except DerivativeAnalysisError:
+        return None
+
+    variable_name = str(variable or hinted_variable or "x").strip() or "x"
+    if not re.fullmatch(r"[A-Za-z]", variable_name):
+        return None
+
+    fallback_local_dict, _ = _build_fallback_local_dict(variable_name, real=True)
+    namespace = {
+        "sp": sp,
+        "parse_expr": parse_expr,
+        "expression_text_input": expr_text,
+        "variable_name_input": variable_name,
+        "fallback_local_dict_input": fallback_local_dict,
+        "transformations_input": TRANSFORMATIONS,
+    }
+
+    try:
+        result = execute_controlled_sympy(_build_derivative_sympy_fallback_code(), namespace)
+    except ControlledSympyFallbackError:
+        return None
+
+    expr = result.get("expr")
+    symbol = result.get("symbol")
+    derivative = result.get("derivative")
+    if not isinstance(expr, sp.Expr) or not isinstance(symbol, sp.Symbol) or not isinstance(derivative, sp.Expr):
+        return None
+    if derivative.has(sp.Derivative):
+        return None
+
+    return _build_derivative_payload(
+        expression,
+        sp.simplify(expr),
+        sp.Symbol(str(symbol), real=True),
+        sp.simplify(derivative),
+        used_sympy_fallback=True,
+    )
+
+
 def parse_derivative_expression(expression: str, variable: str | None = None) -> tuple[sp.Expr, sp.Symbol]:
     expr_text, hinted_variable = _extract_derivative_candidate(expression)
     variable_name = str(variable or hinted_variable or "x").strip() or "x"
@@ -221,15 +344,34 @@ def parse_derivative_expression(expression: str, variable: str | None = None) ->
 
 
 def analyze_derivative(expression: str, variable: str | None = None) -> dict:
-    expr, symbol = parse_derivative_expression(expression, variable)
-    derivative = sp.simplify(sp.diff(expr, symbol))
-    return {
-        "ok": True,
-        "pipeline": "deterministic-derivative",
-        "expressionInput": str(expression or "").strip(),
-        "variable": str(symbol),
-        "expressionLatex": _expr_label(expr),
-        "derivativeLatex": _expr_label(derivative),
-        "derivativeOrder": 1,
-        "hasExactSolution": True,
-    }
+    if _should_force_derivative_fallback(expression):
+        fallback_payload = _try_controlled_sympy_derivative_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
+
+    try:
+        expr, symbol = parse_derivative_expression(expression, variable)
+    except DerivativeAnalysisError as exc:
+        if exc.code in {"parse_failed", "invalid_expression"}:
+            fallback_payload = _try_controlled_sympy_derivative_fallback(expression, variable)
+            if fallback_payload:
+                return fallback_payload
+        raise
+
+    try:
+        derivative = sp.simplify(sp.diff(expr, symbol))
+    except Exception as exc:  # pragma: no cover - depends on SymPy internals
+        fallback_payload = _try_controlled_sympy_derivative_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
+        raise DerivativeAnalysisError(
+            "Impossible de calculer cette derivee de facon fiable.",
+            code="derivative_failed",
+        ) from exc
+
+    if derivative.has(sp.Derivative):
+        fallback_payload = _try_controlled_sympy_derivative_fallback(expression, variable)
+        if fallback_payload:
+            return fallback_payload
+
+    return _build_derivative_payload(expression, expr, symbol, derivative)

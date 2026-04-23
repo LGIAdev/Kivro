@@ -21,6 +21,8 @@ namespace KivrioInstaller
             Application.SetCompatibleTextRenderingDefault(false);
 
             InstallProgressForm progress = null;
+            string installDir = null;
+            string backupInstallDir = null;
             try
             {
                 progress = new InstallProgressForm();
@@ -31,7 +33,8 @@ namespace KivrioInstaller
                 string exePath = Application.ExecutablePath;
                 string extractRoot = Path.Combine(Path.GetTempPath(), "KV");
                 string zipPath = Path.Combine(extractRoot, "kivrio-package.zip");
-                string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kivrio");
+                installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kivrio");
+                backupInstallDir = installDir + ".previous";
                 string startMenuDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     @"Microsoft\Windows\Start Menu\Programs\Kivrio"
@@ -39,7 +42,6 @@ namespace KivrioInstaller
 
                 TryDeleteDirectory(extractRoot);
                 Directory.CreateDirectory(extractRoot);
-                Directory.CreateDirectory(installDir);
                 Directory.CreateDirectory(startMenuDir);
 
                 ExtractPayload(exePath, zipPath);
@@ -51,7 +53,15 @@ namespace KivrioInstaller
                     throw new InvalidOperationException("Le package Kivrio est invalide: dossier app introuvable.");
                 }
 
+                TryDeleteDirectory(backupInstallDir);
+                if (Directory.Exists(installDir))
+                {
+                    Directory.Move(installDir, backupInstallDir);
+                }
+
+                Directory.CreateDirectory(installDir);
                 CopyDirectory(packageRoot, installDir);
+                RestoreUserData(backupInstallDir, installDir);
                 Directory.CreateDirectory(Path.Combine(installDir, "data"));
                 Directory.CreateDirectory(Path.Combine(installDir, "data", "uploads"));
 
@@ -82,6 +92,7 @@ namespace KivrioInstaller
                     }
                 );
 
+                TryDeleteDirectory(backupInstallDir);
                 TryDeleteDirectory(extractRoot);
                 progress.Close();
                 progress.Dispose();
@@ -109,6 +120,8 @@ namespace KivrioInstaller
                     }
                 }
 
+                TryRestorePreviousInstallation(installDir, backupInstallDir);
+
                 string errorPath = Path.Combine(Path.GetTempPath(), "kivrio-installer-error.txt");
                 try
                 {
@@ -126,6 +139,22 @@ namespace KivrioInstaller
                 );
                 return 1;
             }
+        }
+
+        private static void RestoreUserData(string backupInstallDir, string installDir)
+        {
+            if (string.IsNullOrEmpty(backupInstallDir) || !Directory.Exists(backupInstallDir))
+            {
+                return;
+            }
+
+            string backupDataDir = Path.Combine(backupInstallDir, "data");
+            if (!Directory.Exists(backupDataDir))
+            {
+                return;
+            }
+
+            CopyDirectory(backupDataDir, Path.Combine(installDir, "data"));
         }
 
         private static void ExtractPayload(string exePath, string destinationZip)
@@ -192,6 +221,28 @@ namespace KivrioInstaller
                     Directory.CreateDirectory(parent);
                 }
                 File.Copy(file, destination, true);
+            }
+        }
+
+        private static void TryRestorePreviousInstallation(string installDir, string backupInstallDir)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(installDir) || string.IsNullOrEmpty(backupInstallDir))
+                {
+                    return;
+                }
+
+                if (!Directory.Exists(backupInstallDir))
+                {
+                    return;
+                }
+
+                TryDeleteDirectory(installDir);
+                Directory.Move(backupInstallDir, installDir);
+            }
+            catch
+            {
             }
         }
 

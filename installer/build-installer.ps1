@@ -135,7 +135,6 @@ $itemsToCopy = @(
     'server',
     'index.html',
     'README.md',
-    'README.txt',
     'SECURITY.md',
     'LICENSE',
     'CODE_OF_CONDUCT.md',
