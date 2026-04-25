@@ -29,8 +29,8 @@ def build_system_html(payload: dict) -> str:
 
     parts = [
         '<div class="system-solve-card pipeline-card">',
-        '<div class="system-solve-title pipeline-card-title">Résolution du système</div>',
-        _render_row("Système", system_latex),
+        '<div class="system-solve-title pipeline-card-title">R\u00e9solution du syst\u00e8me</div>',
+        _render_row("Syst\u00e8me", system_latex),
     ]
 
     if solution_type == "none":
@@ -46,7 +46,7 @@ def build_system_html(payload: dict) -> str:
     if not has_exact_solution:
         parts.append(
             '<div class="system-solve-note pipeline-card-note">'
-            'Solution approchée ou obtenue via le fallback SymPy'
+            'Solution approch\u00e9e ou obtenue via le fallback SymPy'
             '</div>'
         )
     parts.append('</div>')

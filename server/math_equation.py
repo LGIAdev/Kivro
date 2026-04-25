@@ -122,6 +122,7 @@ def _normalize_equation_candidate(text: str) -> str:
     candidate = _normalize_math_text(text).strip()
     if not candidate:
         return ""
+    candidate = re.sub(r"^\s*#{1,6}\s*", "", candidate).strip()
     candidate = EQUATION_PREFIX_RE.sub("", candidate).strip()
     candidate = re.split(r"[\n\r?!]", candidate, maxsplit=1)[0].strip()
     candidate = TRAILING_CONTEXT_RE.sub("", candidate).strip()
@@ -138,6 +139,7 @@ def _strip_leading_request_phrases(text: str) -> str:
     candidate = _normalize_math_text(text).strip()
     if not candidate:
         return ""
+    candidate = re.sub(r"^\s*#{1,6}\s*", "", candidate).strip()
 
     changed = True
     while changed and candidate:

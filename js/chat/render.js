@@ -341,7 +341,28 @@ function showCopyToast(message){
 }
 
 const MESSAGE_EDIT_MIN_WIDTH = 320;
+const MESSAGE_EDIT_COMFORT_WIDTH = 42 * 16;
+const MESSAGE_EDIT_VIEWPORT_MARGIN = 140;
 let messageEditMeasureNode = null;
+
+function resolveMessageEditMaxWidth(bubble){
+  if (!(bubble instanceof HTMLElement)) return 0;
+  const body = bubble.parentElement;
+  const row = body?.parentElement;
+  const bubbleWidth = Math.ceil(bubble.getBoundingClientRect().width || 0);
+  const bodyWidth = Math.ceil(body?.getBoundingClientRect?.().width || 0);
+  const rowWidth = Math.ceil(row?.getBoundingClientRect?.().width || 0);
+  const viewportWidth = typeof window !== 'undefined'
+    ? Math.max(0, Math.floor(window.innerWidth - MESSAGE_EDIT_VIEWPORT_MARGIN))
+    : 0;
+  const comfortWidth = Math.min(
+    MESSAGE_EDIT_COMFORT_WIDTH,
+    viewportWidth || MESSAGE_EDIT_COMFORT_WIDTH,
+  );
+  const availableWidth = Math.max(rowWidth, bodyWidth, bubbleWidth);
+  if (comfortWidth > 0 && availableWidth > 0) return Math.min(comfortWidth, availableWidth);
+  return comfortWidth || availableWidth;
+}
 
 function ensureMessageEditMeasureNode(){
   if (messageEditMeasureNode?.isConnected) return messageEditMeasureNode;
@@ -575,7 +596,7 @@ function beginMessageEdit(bubble){
   const meta = bubble.__kivrioMessageMeta || {};
   const body = bubble.parentElement;
   if (!(body instanceof HTMLElement)) return;
-  const maxEditorWidth = Math.ceil(body.getBoundingClientRect().width || bubble.getBoundingClientRect().width || 0);
+  const maxEditorWidth = resolveMessageEditMaxWidth(bubble);
 
   const editor = createMessageEditor(meta.text || '');
   body.classList.add('is-editing');

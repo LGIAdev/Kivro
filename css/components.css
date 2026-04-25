@@ -49,6 +49,7 @@
 }
 .msg.user .bubble{ background:transparent; border-style:dashed; }
 .msg .bubble :is(
+  .system-solve-card,
   .equation-solve-card,
   .integral-card,
   .derivative-card,
@@ -65,7 +66,10 @@
   padding:14px 16px;
   box-sizing:border-box;
 }
-.msg .bubble .equation-solve-card{
+.msg .bubble :is(
+  .system-solve-card,
+  .equation-solve-card
+){
   display:flex;
   flex-direction:column;
   gap:12px;
@@ -92,7 +96,10 @@
   font-size:.92rem;
   line-height:1.45;
 }
-.msg .bubble .equation-solve-row{
+.msg .bubble :is(
+  .system-solve-row,
+  .equation-solve-row
+){
   display:grid;
   grid-template-columns:minmax(8.5rem, 11rem) minmax(0, 1fr);
   gap:10px 16px;
@@ -113,6 +120,7 @@
   padding-top:8px;
   border-top:1px solid rgba(255,255,255,.06);
 }
+.msg .bubble .system-solve-row:first-of-type,
 .msg .bubble .equation-solve-row:first-of-type,
 .msg .bubble .integral-row:first-of-type,
 .msg .bubble .derivative-row:first-of-type,
@@ -121,7 +129,10 @@
   padding-top:0;
   border-top:none;
 }
-.msg .bubble .equation-solve-label{
+.msg .bubble :is(
+  .system-solve-label,
+  .equation-solve-label
+){
   font-weight:600;
   color:var(--text);
 }
@@ -134,7 +145,10 @@
   font-weight:600;
   color:var(--text);
 }
-.msg .bubble .equation-solve-value{
+.msg .bubble :is(
+  .system-solve-value,
+  .equation-solve-value
+){
   min-width:0;
 }
 .msg .bubble :is(
@@ -146,6 +160,7 @@
   min-width:0;
 }
 .msg .bubble :is(
+  .system-solve-math,
   .equation-solve-math,
   .integral-math,
   .derivative-math,

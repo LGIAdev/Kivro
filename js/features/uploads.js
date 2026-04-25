@@ -397,6 +397,11 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
   }
 
   if (textFragments.length) {
+    deterministicPromptText = [
+      deterministicPromptText,
+      ...textFragments.map((item) => String(item?.content || '').trim()).filter(Boolean),
+    ].filter(Boolean).join('\n\n').trim();
+    allowDeterministicPipelines = Boolean(deterministicPromptText);
     promptText = appendPromptBlock(
       promptText,
       'Contenu des fichiers joints:',
