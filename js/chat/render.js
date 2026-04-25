@@ -1471,11 +1471,13 @@ function appendMessageAttachments(container, attachments){
     const preview = document.createElement('div');
     preview.className = 'attachment-preview';
     if(attachment.isImage && (attachment.previewUrl || attachment.url)){
+      preview.classList.add('is-image');
       const img = new Image();
       img.src = attachment.previewUrl || attachment.url;
       img.alt = attachment.filename || 'Piece jointe';
       preview.appendChild(img);
     }else{
+      preview.classList.add('is-file');
       const label = document.createElement('span');
       label.textContent = attachmentLabel(attachment.filename);
       preview.appendChild(label);

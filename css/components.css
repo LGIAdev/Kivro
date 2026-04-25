@@ -293,7 +293,7 @@
   padding:12px 14px;
   border:1px solid var(--border);
   border-radius:12px;
-  background:rgba(12, 17, 25, .9);
+  background:var(--surface-field);
   color:var(--text);
   resize:vertical;
   box-sizing:border-box;
@@ -924,7 +924,7 @@
   height:62px;
   border-radius:14px;
   overflow:hidden;
-  background:#111827;
+  background:var(--surface-soft);
   border:1px solid var(--border);
   display:grid;
   place-items:center;
@@ -932,6 +932,13 @@
   color:var(--muted);
   font-weight:700;
   letter-spacing:.06em;
+}
+.attachment-preview.is-image{
+  background:#111827;
+}
+.attachment-preview.is-file{
+  background:var(--surface-soft);
+  color:var(--muted);
 }
 .attachment-preview img{
   width:100%;
