@@ -1163,6 +1163,14 @@ function renderMarkdownBlock(container, text, options = {}){
   const content = String(text || '').trim();
   if (!content) return false;
   container.innerHTML = renderMarkdown(content, options);
+  const targets = [...container.querySelectorAll('.markdown-body')];
+  if (container.classList?.contains?.('markdown-body')) targets.unshift(container);
+  const signature = `${options.allowSpecializedHtml === true ? 'special' : 'plain'}:${content}`;
+  for (const target of targets) {
+    if (!(target instanceof HTMLElement)) continue;
+    target.__kivrioMathSourceSignature = signature;
+    target.__kivrioMathRenderedSignature = null;
+  }
   return true;
 }
 
@@ -1434,6 +1442,14 @@ export function updateBubbleContent(container, role, text, options = {}){
   container.dataset.copyText = String(text || '');
   if (hasText) {
     container.innerHTML = renderMarkdown(text);
+    const targets = [...container.querySelectorAll('.markdown-body')];
+    if (container.classList?.contains?.('markdown-body')) targets.unshift(container);
+    const signature = `plain:${String(text || '').trim()}`;
+    for (const target of targets) {
+      if (!(target instanceof HTMLElement)) continue;
+      target.__kivrioMathSourceSignature = signature;
+      target.__kivrioMathRenderedSignature = null;
+    }
   }
   appendMessageAttachments(container, meta.attachments || []);
   renderMathBlocks(container);

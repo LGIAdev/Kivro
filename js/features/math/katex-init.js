@@ -2,6 +2,8 @@
    Initialise KaTeX (offline) et expose window.kivrioRenderMath()
 */
 const KATEX_BASE = "assets/vendor/katex";
+const KIVRIO_MATH_SOURCE_PROP = "__kivrioMathSourceSignature";
+const KIVRIO_MATH_RENDERED_PROP = "__kivrioMathRenderedSignature";
 
 /* Fallback: injecter la feuille CSS si elle n'est pas chargée */
 function ensureKatexCss() {
@@ -41,15 +43,38 @@ export async function initKatex() {
     // Expose la fonction de rendu
     window.kivrioRenderMath = (root = document) => {
       if (!window.renderMathInElement) return;
-      window.renderMathInElement(root, {
-        delimiters: [
-          { left: "$$",  right: "$$",  display: true  },
-          { left: "\\[", right: "\\]", display: true  },
-          { left: "\\(", right: "\\)", display: false },
-          { left: "$",   right: "$",   display: false }
-        ],
-        throwOnError: false
-      });
+      const targets = [];
+      if (root instanceof HTMLElement && root.classList.contains("markdown-body")) {
+        targets.push(root);
+      } else if (root?.querySelectorAll) {
+        targets.push(...root.querySelectorAll(".markdown-body"));
+      }
+
+      if (!targets.length) targets.push(root);
+
+      for (const target of targets) {
+        if (!(target instanceof HTMLElement)) continue;
+        const sourceSignature = typeof target[KIVRIO_MATH_SOURCE_PROP] === "string"
+          ? target[KIVRIO_MATH_SOURCE_PROP]
+          : "";
+        if (sourceSignature && target[KIVRIO_MATH_RENDERED_PROP] === sourceSignature) {
+          continue;
+        }
+
+        window.renderMathInElement(target, {
+          delimiters: [
+            { left: "$$",  right: "$$",  display: true  },
+            { left: "\\[", right: "\\]", display: true  },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "$",   right: "$",   display: false }
+          ],
+          throwOnError: false
+        });
+
+        if (sourceSignature) {
+          target[KIVRIO_MATH_RENDERED_PROP] = sourceSignature;
+        }
+      }
     };
 
     // ---- Auto-render sur nouveaux messages / mises à jour (streaming) ----

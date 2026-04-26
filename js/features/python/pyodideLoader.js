@@ -9,6 +9,7 @@ const REQUIRED_PACKAGES = [
 const OPTIONAL_LOCAL_WHEELS = {
   seaborn: 'seaborn-0.13.2-py3-none-any.whl',
 };
+const PLOT_CONTEXT_MARKER = '__KIVRIO_PLOT_CONTEXT__=';
 
 const PYTHON_RUNNER = `
 import base64
@@ -122,17 +123,55 @@ async function ensurePackagesForCode(pyodide, code) {
 
 function normalizeResult(payload) {
   const result = payload && typeof payload === 'object' ? payload : {};
-  const stderr = String(result.stderr || '')
+  const extractPlotContexts = (value) => {
+    const contexts = [];
+    const lines = String(value || '').split(/\r?\n/);
+    const kept = [];
+
+    for (const rawLine of lines) {
+      const line = String(rawLine || '');
+      const trimmed = line.trim();
+      if (!trimmed) {
+        kept.push(line);
+        continue;
+      }
+
+      const markerIndex = trimmed.indexOf(PLOT_CONTEXT_MARKER);
+      if (markerIndex < 0) {
+        kept.push(line);
+        continue;
+      }
+
+      const payloadText = trimmed.slice(markerIndex + PLOT_CONTEXT_MARKER.length).trim();
+      if (!payloadText) continue;
+
+      try {
+        const parsed = JSON.parse(payloadText);
+        if (parsed && typeof parsed === 'object') contexts.push(parsed);
+      } catch (_) {}
+    }
+
+    return {
+      text: kept.join('\n').trim(),
+      contexts,
+    };
+  };
+
+  const stdoutPayload = extractPlotContexts(result.stdout);
+  const stderrPayload = extractPlotContexts(result.stderr);
+  const stderr = stderrPayload.text
     .split(/\r?\n/)
     .filter((line) => !/FigureCanvasAgg is non-interactive, and thus cannot be shown/i.test(line))
     .join('\n')
     .trim();
+
   return {
     status: result.status === 'error' ? 'error' : 'ok',
-    stdout: String(result.stdout || '').trim(),
+    stdout: stdoutPayload.text,
     stderr,
     error: String(result.error || '').trim(),
     images: Array.isArray(result.images) ? result.images.filter(Boolean) : [],
+    plotContexts: [...stdoutPayload.contexts, ...stderrPayload.contexts],
   };
 }
 
@@ -186,6 +225,7 @@ export async function runPython(code, options = {}) {
       stderr: '',
       error: '',
       images: [],
+      plotContexts: [],
     };
   }
 
@@ -199,6 +239,7 @@ export async function runPython(code, options = {}) {
     stderr: '',
     error: error?.message || String(error || 'Execution Pyodide impossible'),
     images: [],
+    plotContexts: [],
   }));
 
   if (options.useCache !== false) executionCache.set(source, promise);

@@ -138,11 +138,17 @@ def _clean_expression_input(text: str) -> tuple[str, str | None]:
 
     function_match = FUNCTION_RE.match(raw)
     if function_match:
-        return function_match.group(2).strip(), function_match.group(1).strip()
+        expr = _normalize_expression_candidate(function_match.group(2))
+        if not expr:
+            raise VariationAnalysisError("Expression de fonction manquante.", code="missing_expression")
+        return expr, function_match.group(1).strip()
 
     y_match = Y_EQUALS_RE.match(raw)
     if y_match:
-        return y_match.group(1).strip(), None
+        expr = _normalize_expression_candidate(y_match.group(1))
+        if not expr:
+            raise VariationAnalysisError("Expression de fonction manquante.", code="missing_expression")
+        return expr, None
 
     for line in raw.splitlines():
         candidate_line = _strip_leading_request_phrases(line)
@@ -162,7 +168,10 @@ def _clean_expression_input(text: str) -> tuple[str, str | None]:
             if expr:
                 return expr, None
 
-    return raw, None
+    expr = _normalize_expression_candidate(raw)
+    if not expr:
+        raise VariationAnalysisError("Expression de fonction manquante.", code="missing_expression")
+    return expr, None
 
 
 def _normalize_expression_candidate(text: str) -> str:

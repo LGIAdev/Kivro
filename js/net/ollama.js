@@ -5,6 +5,7 @@ import { bindMessageRecord, renderMsg, updateBubbleContent } from '../chat/rende
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
 import { canModelReadFiles } from '../config/file-capable-models.js';
+import { runPython } from '../features/python/pyodideLoader.js';
 import {
   detachPendingUploads,
   getPendingUploads,
@@ -22,6 +23,7 @@ const LS = { base: 'ollamaBase', model: 'ollamaModel' };
 const OCR_PROGRESS_HINT_DELAY_MS = 8000;
 const THINK_START_TAG = '<think>';
 const THINK_END_TAG = '</think>';
+const KIVRIO_PLOT_CONTEXT_MARKER = '__KIVRIO_PLOT_CONTEXT__=';
 const CHAT_REASONING_PATHS = [
   'message.thinking',
   'message.reasoning',
@@ -56,6 +58,18 @@ const VARIATION_FALLBACK_GUIDANCE = [
   'Si tu ne peux pas fournir un tableau de variation strictement structure, reponds en texte plutot que d inventer un faux tableau de type Lycee.',
   'Quand c est utile, donne les intervalles de croissance et de decroissance, les extrema et le signe de la derivee dans l explication.',
   ].join('\n');
+const PYTHON_PLOTTING_GUIDANCE = [
+  'Pour toute demande de trace mathematique en Python avec matplotlib, le modele pilote la demarche mais le code doit effectuer les calculs exacts.',
+  'Ne jamais ecrire a la main des coordonnees supposees pour les intersections, racines, zeros, sommet, extrema ou autres points remarquables.',
+  'Toujours calculer ces valeurs dans le code avec SymPy, NumPy ou une methode Python equivalente avant de tracer les points et leurs etiquettes.',
+  'Toute valeur issue de SymPy et transmise a Matplotlib doit etre convertie explicitement en float, en liste de float ou en numpy.ndarray numerique compatible avant plot, scatter, annotate, set_xlim ou set_ylim.',
+  'Ne pas passer directement a Matplotlib des listes d objets SymPy, des bornes SymPy ou des expressions symboliques non converties.',
+  'Si l utilisateur demande un ajout sur un trace deja present, fournir un script Python complet et coherent qui recalcule les valeurs utiles au lieu de reemployer des coordonnees deduites a la main.',
+  `A la fin de chaque script de trace, imprimer une seule ligne machine lisible au format ${KIVRIO_PLOT_CONTEXT_MARKER}{...} avec json.dumps(..., ensure_ascii=False).`,
+  'Ce JSON doit venir du calcul Python et resumer, si pertinent, la fonction ou l objet etudie, le domaine, les intersections, les racines, les extrema, le signe, les variations, les asymptotes et un court resume qualitatif factuel.',
+  'Si tu fournis du Python, rends un seul bloc ```python``` executable par Kivrio.',
+  'Tu peux garder de la marge pour les explications qualitatives, mais pas pour les valeurs mathematiques importantes qui doivent venir du calcul.',
+].join('\n');
   const VARIATION_TABLE_HTML_OPEN = '<variation-table-html>';
   const VARIATION_TABLE_HTML_CLOSE = '</variation-table-html>';
   const SYSTEM_SOLVE_HTML_OPEN = '<system-solve-html>';
@@ -702,10 +716,134 @@ function looksLikeGenericMathGuidanceRequest(text) {
   return mentionsKnownMathObject || (asksMathOperation && hasSymbolicMath);
 }
 
-function buildEffectiveSystemPrompt(sys, userText) {
+function normalizePlotIntentProbe(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function conversationHasPythonPlottingContext(convId) {
+  const history = toChatHistory(readHistory(convId)).slice(-8);
+  if (!history.length) return false;
+
+  return history.some((message) => {
+    const content = String(message?.content || '');
+    const normalized = normalizePlotIntentProbe(content);
+    if (!normalized) return false;
+    if (/```(?:python|python3|py|pyodide)?[\s\S]*?(?:import matplotlib|from matplotlib|plt\.)/i.test(content)) {
+      return true;
+    }
+    return /\b(?:matplotlib|courbe|graphe|graphique|trace|tracer|tracez|plot|intersection|intersections|sommet|extremum|racines?|zeros?)\b/.test(normalized);
+  });
+}
+
+function looksLikePythonPlottingRequest(userText, convId) {
+  const raw = normalizePlotIntentProbe(userText);
+  if (!raw) return false;
+
+  const directPlotRequest =
+    /\b(?:matplotlib|courbe|graphe|graphique|plot|tracer|trace|tracez)\b/.test(raw);
+
+  if (directPlotRequest) return true;
+
+  if (!conversationHasPythonPlottingContext(convId)) return false;
+
+  return /\b(?:indiquer|ajouter|placer|afficher|marquer|annoter|annotation|intersection|intersections|point|points|sommet|extremum|racines?|zeros?|axe|axes)\b/.test(raw);
+}
+
+function looksLikePlotQualitativeExplanationRequest(userText, convId) {
+  const raw = normalizePlotIntentProbe(userText);
+  if (!raw) return false;
+  if (!conversationHasPythonPlottingContext(convId)) return false;
+
+  const asksExplanation =
+    /\b(?:expliquer|expliquez|explique|decrire|decrivez|decris|commenter|commentez|commentaire|interpreter|interpretez|interpretation|analyse|analyser|qualitativ)\b/.test(raw);
+
+  if (!asksExplanation) return false;
+
+  return (
+    /\b(?:courbe|graphe|graphique|figure|trace)\b/.test(raw)
+    || /\bcette\s+courbe\b/.test(raw)
+    || /\bce\s+graphe\b/.test(raw)
+    || /\bcette\s+figure\b/.test(raw)
+  );
+}
+
+function extractPythonCodeFences(content) {
+  const source = String(content || '');
+  const fences = [];
+  const pattern = /```([^\n`]*)\n?([\s\S]*?)```/g;
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    const info = String(match[1] || '').trim();
+    const lang = (info ? info.split(/\s+/)[0] : '').toLowerCase();
+    fences.push({
+      lang,
+      code: String(match[2] || '').replace(/\n$/, ''),
+    });
+  }
+  return fences;
+}
+
+function isPlottingPythonFence(fence) {
+  const lang = String(fence?.lang || '').trim().toLowerCase();
+  const code = String(fence?.code || '');
+  if (lang && !['python', 'python3', 'py', 'pyodide'].includes(lang)) return false;
+  return /\b(?:import\s+matplotlib|from\s+matplotlib|matplotlib\.pyplot|plt\.)/i.test(code);
+}
+
+function findLatestPlottingPythonCode(convId) {
+  const history = readHistory(convId).slice().reverse();
+  for (const message of history) {
+    if (String(message?.role || '').toLowerCase() !== 'assistant') continue;
+    const fences = extractPythonCodeFences(message?.content || '');
+    for (let index = fences.length - 1; index >= 0; index -= 1) {
+      const fence = fences[index];
+      if (isPlottingPythonFence(fence)) return fence.code;
+    }
+  }
+  return '';
+}
+
+async function resolvePlotExplanationGuidance(userText, convId) {
+  if (!looksLikePlotQualitativeExplanationRequest(userText, convId)) return '';
+
+  const code = findLatestPlottingPythonCode(convId);
+  if (!code) return '';
+
+  try {
+    const result = await runPython(code);
+    const contexts = Array.isArray(result?.plotContexts) ? result.plotContexts.filter(Boolean) : [];
+    const latestContext = contexts[contexts.length - 1];
+    if (!latestContext || typeof latestContext !== 'object') return '';
+
+    return [
+      'Pour cette reponse, explique la courbe strictement a partir du contexte calcule ci-dessous.',
+      'Ne recalcule pas librement les racines, intersections, extrema, variations, signe ou asymptotes si le contexte les fournit deja.',
+      'Si une information manque dans le contexte, dis-le plutot que d inventer.',
+      'Tu peux garder une explication qualitative claire et pedagogique, mais elle doit rester ancree sur ces faits calcules.',
+      'Contexte de courbe calcule par Python :',
+      '```json',
+      JSON.stringify(latestContext, null, 2),
+      '```',
+    ].join('\n');
+  } catch (_) {
+    return '';
+  }
+}
+
+function buildEffectiveSystemPrompt(sys, userText, convId, extraGuidance = '') {
   const base = String(sys || '').trim();
-  if (!looksLikeVariationTableRequest(userText)) return base;
-  return base ? `${base}\n\n${VARIATION_FALLBACK_GUIDANCE}` : VARIATION_FALLBACK_GUIDANCE;
+  const additions = [];
+  if (looksLikeVariationTableRequest(userText)) additions.push(VARIATION_FALLBACK_GUIDANCE);
+  if (looksLikePythonPlottingRequest(userText, convId)) additions.push(PYTHON_PLOTTING_GUIDANCE);
+  if (String(extraGuidance || '').trim()) additions.push(String(extraGuidance).trim());
+  if (!base && additions.length === 0) return '';
+  return [base, ...additions].filter(Boolean).join('\n\n');
 }
 
 function wrapVariationTableHtml(html) {
@@ -1430,10 +1568,10 @@ async function attemptSegmentedExerciseReply({ content, conversationId, targetBu
   };
 }
 
-function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] }) {
+function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [], extraSystemGuidance = '' }) {
   const out = [];
   const history = toChatHistory(readHistory(convId));
-  const effectiveSys = buildEffectiveSystemPrompt(sys, userText);
+  const effectiveSys = buildEffectiveSystemPrompt(sys, userText, convId, extraSystemGuidance);
 
   let hist = history.slice();
   if (hist.length) {
@@ -1454,10 +1592,10 @@ function buildChatMessages({ sys, convId, userText, maxPast = 16, images = [] })
   return out;
 }
 
-function buildGeneratePrompt({ sys, convId, userText, maxPast = 16 }) {
+function buildGeneratePrompt({ sys, convId, userText, maxPast = 16, extraSystemGuidance = '' }) {
   const history = toChatHistory(readHistory(convId)).slice(-maxPast);
   const parts = [];
-  const effectiveSys = buildEffectiveSystemPrompt(sys, userText);
+  const effectiveSys = buildEffectiveSystemPrompt(sys, userText, convId, extraSystemGuidance);
   if (effectiveSys) parts.push(`System:\n${effectiveSys}`);
   for (const message of history) {
     parts.push((message.role === 'user' ? 'User' : 'Assistant') + ':\n' + message.content);
@@ -1467,10 +1605,10 @@ function buildGeneratePrompt({ sys, convId, userText, maxPast = 16 }) {
   return parts.join('\n\n');
 }
 
-export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 16, images = [] }) {
+export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 16, images = [], extraSystemGuidance = '' }) {
   const body = {
     model,
-    messages: buildChatMessages({ sys, convId, userText: prompt, maxPast, images }),
+    messages: buildChatMessages({ sys, convId, userText: prompt, maxPast, images, extraSystemGuidance }),
     stream: true,
   };
   const res = await fetch(base + '/api/chat', {
@@ -1480,7 +1618,7 @@ export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 
   });
 
   if ((res.status === 404 || res.status === 400) && !images.length) {
-    return yield* streamGenerate({ base, model, sys, prompt, convId, maxPast });
+    return yield* streamGenerate({ base, model, sys, prompt, convId, maxPast, extraSystemGuidance });
   }
   if (!res.ok) throw new Error('HTTP ' + res.status);
 
@@ -1512,15 +1650,15 @@ export async function* streamChat({ base, model, sys, prompt, convId, maxPast = 
   } catch (_) {}
 }
 
-export async function* streamGenerate({ base, model, sys, prompt, convId, maxPast = 16 }) {
-  const effectiveSys = buildEffectiveSystemPrompt(sys, prompt);
+export async function* streamGenerate({ base, model, sys, prompt, convId, maxPast = 16, extraSystemGuidance = '' }) {
+  const effectiveSys = buildEffectiveSystemPrompt(sys, prompt, convId, extraSystemGuidance);
   const res = await fetch(base + '/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
       system: effectiveSys || undefined,
-      prompt: buildGeneratePrompt({ sys, convId, userText: prompt, maxPast }),
+      prompt: buildGeneratePrompt({ sys, convId, userText: prompt, maxPast, extraSystemGuidance }),
       stream: true,
     }),
   });
@@ -1668,6 +1806,7 @@ export async function regenerateFromEditedMessage({ conversationId, messageId, c
 
     aiB = renderMsg('assistant', '', { model });
     const assistantState = createAssistantStreamState();
+    const plotExplanationGuidance = await resolvePlotExplanationGuidance(lastMessage.content, conversationId);
 
     try {
       for await (const chunk of streamChat({
@@ -1677,6 +1816,7 @@ export async function regenerateFromEditedMessage({ conversationId, messageId, c
         prompt: lastMessage.content,
         convId: conversationId,
         images: [],
+        extraSystemGuidance: plotExplanationGuidance,
       })) {
         mergeAssistantStreamChunk(assistantState, chunk);
         const livePayload = buildAssistantPayload(assistantState, { live: true });
@@ -1909,6 +2049,7 @@ export async function sendCurrent() {
     });
     if (!aiB) aiB = renderMsg('assistant', '', { model });
     const assistantState = createAssistantStreamState();
+    const plotExplanationGuidance = await resolvePlotExplanationGuidance(prepared.promptText || text, convId);
     try {
       for await (const chunk of streamChat({
         base,
@@ -1917,6 +2058,7 @@ export async function sendCurrent() {
         prompt: prepared.promptText || text,
         convId,
         images: prepared.imagePayloads || [],
+        extraSystemGuidance: plotExplanationGuidance,
       })) {
         mergeAssistantStreamChunk(assistantState, chunk);
         const livePayload = buildAssistantPayload(assistantState, { live: true });
