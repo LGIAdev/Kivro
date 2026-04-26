@@ -122,10 +122,15 @@ async function ensurePackagesForCode(pyodide, code) {
 
 function normalizeResult(payload) {
   const result = payload && typeof payload === 'object' ? payload : {};
+  const stderr = String(result.stderr || '')
+    .split(/\r?\n/)
+    .filter((line) => !/FigureCanvasAgg is non-interactive, and thus cannot be shown/i.test(line))
+    .join('\n')
+    .trim();
   return {
     status: result.status === 'error' ? 'error' : 'ok',
     stdout: String(result.stdout || '').trim(),
-    stderr: String(result.stderr || '').trim(),
+    stderr,
     error: String(result.error || '').trim(),
     images: Array.isArray(result.images) ? result.images.filter(Boolean) : [],
   };

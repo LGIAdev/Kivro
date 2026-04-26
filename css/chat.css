@@ -44,6 +44,7 @@
 /* Code inline */
 .markdown-body code {
   background: #1e293b;
+  color: #f8fafc;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
@@ -62,6 +63,7 @@
   background: none;
   padding: 0;
   font-size: 0.95em;
+  color: #f8fafc;
 }
 
 /* Personnalisation de la ligne séparatrice Markdown */

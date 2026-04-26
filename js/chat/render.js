@@ -164,6 +164,26 @@ function isPythonFenceLanguage(lang){
   return ['python', 'py', 'pyodide'].includes(String(lang || '').toLowerCase());
 }
 
+function looksLikeMatplotlibPythonSource(source){
+  const text = String(source || '').trim().toLowerCase();
+  if (!text) return false;
+
+  return [
+    /\bimport\s+matplotlib\b/,
+    /\bfrom\s+matplotlib\b/,
+    /\bmatplotlib\.pyplot\b/,
+    /\bplt\.(plot|scatter|bar|hist|imshow|figure|subplots|subplot|title|xlabel|ylabel|legend|grid|xlim|ylim|axhline|axvline|show|savefig)\b/,
+    /\bfig\s*,\s*ax\s*=\s*plt\.subplots\b/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function isHydratablePythonFence(lang, source){
+  const normalizedLang = String(lang || '').trim().toLowerCase();
+  if (isPythonFenceLanguage(normalizedLang) || normalizedLang === 'python3') return true;
+  if (normalizedLang) return false;
+  return looksLikeMatplotlibPythonSource(source);
+}
+
 async function copyTextToClipboard(text){
   const value = String(text || '');
   if (navigator.clipboard?.writeText) {
@@ -1248,10 +1268,10 @@ function renderPyodideResult(resultCard, result){
 
 async function hydratePyodideBlock(pre){
   const lang = pre.dataset.codeLang || '';
-  if (!isPythonFenceLanguage(lang)) return;
+  const code = pre.querySelector('code')?.textContent || pre.textContent || '';
+  if (!isHydratablePythonFence(lang, code)) return;
   if (pre.closest('.pyodide-inline-block')) return;
 
-  const code = pre.querySelector('code')?.textContent || pre.textContent || '';
   const wrapper = document.createElement('div');
   wrapper.className = 'pyodide-inline-block';
 
