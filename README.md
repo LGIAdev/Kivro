@@ -15,12 +15,8 @@ Status: project under active development.
 
 ## Releases
 
+- [Kivrio 2026.4.27](releases/Kivrio-2026.4.27.md)
 - [Kivrio 2026.4.25.3](releases/Kivrio-2026.4.25.3.md)
-- [Kivrio 2026.4.25.2](releases/Kivrio-2026.4.25.2.md)
-- [Kivrio 2026.4.25.1](releases/Kivrio-2026.4.25.1.md)
-- [Kivrio 2026.4.25](releases/Kivrio-2026.4.25.md)
-- [Kivrio 2026.4.23](releases/Kivrio-2026.4.23.md)
-- [Kivrio 2026.4.22](releases/Kivrio-2026.4.22.md)
 - [Kivrio 2026.4.18.1](releases/Kivrio-2026.4.18.1.md)
 - [Kivrio 2026.4.9](releases/Kivrio-2026.4.9.md)
 - [Releases v2026.3.29](releases/v2026.3.29.md)
@@ -39,7 +35,7 @@ Status: project under active development.
 - Rename and delete actions for conversation links
 - Local Python backend serving both the UI and the API
 - Direct file reading for supported multimodal models
-- Local Pix2Text OCR for image uploads sent to non-multimodal models
+- Embedded scientific Python runtime for the local backend
 
 ---
 
@@ -48,18 +44,17 @@ Status: project under active development.
 Kivrio now runs as a local application made of:
 
 - a local Python server
+- an embedded scientific Python runtime used by the backend
 - a local SQLite database
 - a browser UI served from the same local server
 - local Ollama models running outside Kivrio
-- a local Pix2Text OCR integration inside Kivrio for non-multimodal models
+- direct file reading for supported multimodal models
 
 Conversation data is stored locally in:
 
 `data/kivrio.db`
 
 No cloud database is used for conversation history.
-
-OCR runtime files, downloaded model weights, temporary files and OCR outputs are kept local and are excluded from the Git repository.
 
 ---
 
@@ -92,7 +87,7 @@ Make sure Ollama is installed locally and running, for example on:
 
 `http://127.0.0.1:11434`
 
-For non-multimodal models, Kivrio can route image uploads through the local Pix2Text OCR flow before sending the extracted text to the model.
+For image files, Kivrio keeps file upload support for compatible multimodal models.
 
 ### Authentication
 
@@ -127,7 +122,7 @@ Logging out of the interface no longer clears persistent conversation history.
 - `js/`: frontend logic
 - `server/`: local API and SQLite access
 - `css/`: styles
-- `ocr/pix2text/`: local OCR integration scripts and stable config
+- `runtime/backend-python/`: embedded scientific Python runtime used by the local backend
 - `data/kivrio.db`: local conversation database
 
 ---
@@ -139,7 +134,7 @@ Logging out of the interface no longer clears persistent conversation history.
 - [x] Local conversation history
 - [x] SQLite persistence
 - [x] Sidebar rename/delete actions
-- [x] OCR for image uploads with non-multimodal models
+- [x] File uploads for supported multimodal models
 - [ ] Voice input/output
 - [ ] GitHub Pages demo
 

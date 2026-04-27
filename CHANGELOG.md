@@ -2,6 +2,14 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.27] - 2026-04-27
+
+### Changed
+- Removed the local OCR flow for image uploads sent to non-multimodal models and kept file uploads for supported multimodal models.
+- Migrated the embedded backend Python runtime out of the legacy OCR branch into `runtime/backend-python`.
+- Updated the Windows launcher and installer packaging to use the new embedded backend runtime path.
+- Clarified the project architecture and release documentation around the embedded scientific Python runtime.
+
 ## [2026.4.25.3] - 2026-04-26
 
 ### Added

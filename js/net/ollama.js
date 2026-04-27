@@ -4,7 +4,6 @@
 import { bindMessageRecord, renderMsg, updateBubbleContent } from '../chat/render.js';
 import { Store, fmtTitle, mountHistory } from '../store/conversations.js';
 import { qs } from '../core/dom.js';
-import { canModelReadFiles } from '../config/file-capable-models.js';
 import { runPython } from '../features/python/pyodideLoader.js';
 import {
   detachPendingUploads,
@@ -20,7 +19,6 @@ import {
 } from './conversationsApi.js';
 
 const LS = { base: 'ollamaBase', model: 'ollamaModel' };
-const OCR_PROGRESS_HINT_DELAY_MS = 8000;
 const THINK_START_TAG = '<think>';
 const THINK_END_TAG = '</think>';
 const KIVRIO_PLOT_CONTEXT_MARKER = '__KIVRIO_PLOT_CONTEXT__=';
@@ -1719,18 +1717,6 @@ function renderConversationSnapshot(conversation) {
   }
 }
 
-function hasPendingImageUploads(items = []) {
-  return items.some((item) => item?.kind === 'image');
-}
-
-function statusMessageFor(stage) {
-  if (stage === 'ocr-complete') return 'Transcription terminee, envoi au modele...';
-  if (stage === 'ocr-reading-slow') {
-    return 'Lecture de l image en cours...\n\nLe premier traitement OCR peut etre plus long.';
-  }
-  return 'Lecture de l image en cours...';
-}
-
 function setSendButtonBusy(isBusy) {
   const btn = qs('#send-btn');
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -1872,8 +1858,6 @@ export async function sendCurrent() {
     alert('Impossible de charger le prompt systeme: ' + (err?.message || err));
     return;
   }
-  const needsOcrFeedback = hasPendingImageUploads(pendingUploads) && !canModelReadFiles(model);
-
   const detachedUploads = pendingUploads.length ? detachPendingUploads() : [];
   const localAttachments = detachedUploads.map((item) => ({
     filename: item?.file?.name || 'Piece jointe',
@@ -1884,7 +1868,6 @@ export async function sendCurrent() {
     isImage: item?.kind === 'image',
   }));
   let shouldReleaseDetachedUploads = true;
-  let ocrHintTimer = null;
 
   isSendInFlight = true;
   setSendButtonBusy(true);
@@ -1899,20 +1882,6 @@ export async function sendCurrent() {
 
     const base = readBase();
     let aiB = null;
-    let ocrStage = 'ocr-reading';
-    let hasRenderedModelText = false;
-
-    const updateOcrStatus = (stage) => {
-      ocrStage = stage;
-      if (!aiB || hasRenderedModelText) return;
-      renderAssistantChunk(aiB, { answerText: statusMessageFor(stage) });
-    };
-
-    if (needsOcrFeedback) {
-      ocrHintTimer = setTimeout(() => {
-        if (ocrStage === 'ocr-reading') updateOcrStatus('ocr-reading-slow');
-      }, OCR_PROGRESS_HINT_DELAY_MS);
-    }
 
     let convId = Store.currentId?.() || null;
     if (convId) {
@@ -1936,10 +1905,6 @@ export async function sendCurrent() {
       }
       alert(message);
       return;
-    }
-
-    if (needsOcrFeedback) {
-      aiB = renderMsg('assistant', statusMessageFor('ocr-reading'), { model, pyodideFinal: false });
     }
 
     let uploadedAttachments = [];
@@ -1970,10 +1935,8 @@ export async function sendCurrent() {
     const prepared = await preparePendingUploadsForSend({
       model,
       userText: text,
-      onStatus: needsOcrFeedback ? updateOcrStatus : undefined,
       items: detachedUploads,
     });
-    if (ocrHintTimer) clearTimeout(ocrHintTimer);
     if (!prepared.ok) {
       const message = prepared.message || 'Les fichiers joints ne peuvent pas etre envoyes.';
       if (aiB) {
@@ -2063,7 +2026,6 @@ export async function sendCurrent() {
         mergeAssistantStreamChunk(assistantState, chunk);
         const livePayload = buildAssistantPayload(assistantState, { live: true });
         if (!livePayload.answerText.trim() && !livePayload.reasoningText.trim()) continue;
-        hasRenderedModelText = true;
         renderAssistantChunk(aiB, livePayload, {
           model,
           pyodideFinal: false,
@@ -2090,7 +2052,6 @@ export async function sendCurrent() {
       console.warn('Fetch error', err);
     }
   } finally {
-    if (ocrHintTimer) clearTimeout(ocrHintTimer);
     if (shouldReleaseDetachedUploads) releaseUploadItems(detachedUploads);
     isSendInFlight = false;
     setSendButtonBusy(false);

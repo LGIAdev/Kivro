@@ -105,7 +105,7 @@ $zipPath = Join-Path $installerBuildRoot 'kivrio-package.zip'
 $targetExe = Join-Path $outputRoot 'Kivrio-Setup.exe'
 $stubExe = Join-Path $installerBuildRoot 'Kivrio-Setup.stub.exe'
 $iconPath = Join-Path $projectRoot 'assets\kivrio.ico'
-$pythonPath = Join-Path $projectRoot 'ocr\pix2text\runtime\python.exe'
+$pythonPath = Join-Path $projectRoot 'runtime\backend-python\python.exe'
 $iconScript = Join-Path $projectRoot 'installer\generate-icon.py'
 $installerStub = Join-Path $projectRoot 'installer\KivrioSetupStub.cs'
 $csharpCompiler = Get-CSharpCompiler
@@ -131,7 +131,7 @@ $itemsToCopy = @(
     'bin',
     'css',
     'js',
-    'ocr',
+    'runtime',
     'server',
     'index.html',
     'README.md',
@@ -155,8 +155,6 @@ Get-ChildItem -Path $packageRoot -Directory -Recurse -Filter '__pycache__' -Erro
 
 Get-ChildItem -Path $packageRoot -File -Recurse -Include '*.pyc','*.pyo' -ErrorAction SilentlyContinue |
     Remove-Item -Force
-
-Remove-IfExists (Join-Path $packageRoot 'ocr\pix2text\_downloads')
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force

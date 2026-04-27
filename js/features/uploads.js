@@ -184,49 +184,11 @@ function textFragmentsToPromptBlocks(textFragments) {
   return textFragments.map((item) => ['Fichier: ' + item.name, item.content].join('\n'));
 }
 
-function ocrResultsToPromptBlocks(results) {
-  return results.map((item) => ['Image: ' + item.filename, item.markdown].join('\n'));
-}
-
 function defaultPromptForAttachments({ mode, userText }) {
   const trimmed = String(userText || '').trim();
   if (trimmed) return trimmed;
-  if (mode === 'ocr') return 'Analyse la transcription OCR ci-dessous et aide-moi a resoudre le probleme.';
   if (mode === 'image') return 'Analyse le fichier joint et aide-moi a resoudre le probleme.';
   return 'Analyse le document joint.';
-}
-
-async function requestPix2TextOcr(imageItems) {
-  const form = new FormData();
-  for (const item of imageItems) {
-    form.append('files', item.file, item.file.name);
-  }
-
-  const res = await fetch('/api/ocr/pix2text', {
-    method: 'POST',
-    headers: { Accept: 'application/json' },
-    body: form,
-  });
-
-  let payload = null;
-  try {
-    payload = await res.json();
-  } catch (_) {}
-
-  if (!res.ok) {
-    if (res.status === 401 && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent('kivro:auth-required', {
-        detail: { message: payload?.error || 'Authentication required.' },
-      }));
-    }
-    throw new Error(payload?.error || `HTTP ${res.status}`);
-  }
-
-  const results = Array.isArray(payload?.results) ? payload.results : [];
-  return results.map((item) => ({
-    filename: String(item?.filename || '').trim(),
-    markdown: String(item?.markdown || '').trim(),
-  }));
 }
 
 export function wireUploads() {
@@ -352,46 +314,10 @@ export async function preparePendingUploadsForSend({ model, userText, onStatus, 
       });
     }
   } else if (imageItems.length) {
-    if (typeof onStatus === 'function') onStatus('ocr-reading');
-    let ocrResults = [];
-    try {
-      ocrResults = await requestPix2TextOcr(imageItems);
-    } catch (err) {
-      return {
-        ok: false,
-        message: err?.message || 'OCR impossible pour les images jointes.',
-      };
-    }
-
-    const validOcrResults = ocrResults.filter((item) => item.filename && item.markdown);
-    if (validOcrResults.length !== imageItems.length) {
-      return {
-        ok: false,
-        message: 'Impossible de lire correctement l image. Essayez une image plus nette ou utilisez un modele multimodal.',
-      };
-    }
-
-    if (!promptText) {
-      promptText = defaultPromptForAttachments({ mode: 'ocr', userText });
-    }
-    promptText = appendPromptBlock(
-      promptText,
-      'Transcription OCR des images jointes:',
-      ocrResultsToPromptBlocks(validOcrResults),
-    );
-    deterministicPromptText = [
-      deterministicPromptText,
-      ...validOcrResults.map((item) => String(item?.markdown || '').trim()).filter(Boolean),
-    ].filter(Boolean).join('\n\n').trim();
-    allowDeterministicPipelines = Boolean(deterministicPromptText);
-    console.info('[Kivrio trace][image-ocr]', {
-      model: String(model || ''),
-      imageCount: imageItems.length,
-      ocrResultCount: validOcrResults.length,
-      allowDeterministicPipelines,
-      deterministicPromptPreview: deterministicPromptText.slice(0, 500),
-    });
-    if (typeof onStatus === 'function') onStatus('ocr-complete');
+    return {
+      ok: false,
+      message: 'Les images jointes ne sont plus traitees via OCR local. Utilisez un modele multimodal pour analyser un fichier image.',
+    };
   } else if (!promptText && textFragments.length) {
     promptText = defaultPromptForAttachments({ mode: 'text', userText });
   }

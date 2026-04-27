@@ -2,7 +2,7 @@
 setlocal
 set "ROOT=%~dp0"
 set "PORT=8000"
-set "EMBEDDED_PY=%ROOT%ocr\pix2text\runtime\python.exe"
+set "EMBEDDED_PY=%ROOT%runtime\backend-python\python.exe"
 set "WAIT_SECONDS=30"
 
 if exist "%EMBEDDED_PY%" (

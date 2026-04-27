@@ -76,13 +76,7 @@ data/
 releases/windows-installer/
 
 # =============================
-# Local OCR runtime / models
+# Embedded backend runtime
 # =============================
-ocr/pix2text/_downloads/
-ocr/pix2text/runtime/
-ocr/pix2text/models/
-ocr/pix2text/output/
-ocr/pix2text/temp/
-ocr/pix2text/config/Ultralytics/
-ocr/pix2text/config/settings.yaml
+runtime/backend-python/
 

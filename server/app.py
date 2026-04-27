@@ -40,7 +40,6 @@ import math_system  # noqa: E402
 import math_system_render  # noqa: E402
 import math_variation  # noqa: E402
 import math_variation_render  # noqa: E402
-import ocr  # noqa: E402
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -571,15 +570,10 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                 return
 
             if method == 'POST' and path == '/api/ocr/pix2text':
-                uploads = self.read_upload_files()
-                images = []
-                for item in uploads:
-                    suffix = Path(item['filename'] or '').suffix.lower()
-                    kind = ALLOWED_UPLOADS.get(suffix, (None, None, None))[2]
-                    if kind != 'image':
-                        raise ValueError('Le moteur OCR Pix2Text accepte uniquement des images.')
-                    images.append(item)
-                self.send_json(ocr.run_pix2text_batch(images))
+                self.send_error_json(
+                    HTTPStatus.GONE,
+                    'Le flux OCR local a ete retire de Kivrio. Utilisez un modele multimodal pour les images jointes.',
+                )
                 return
 
             if method == 'POST' and path == '/api/math/variation-table':
