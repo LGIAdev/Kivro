@@ -1,8 +1,16 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL DEFAULT 'Nouvelle conversation',
+  folder_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
@@ -41,6 +49,9 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
   ON conversations(updated_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_conversations_folder_id
+  ON conversations(folder_id);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
   ON messages(conversation_id);
 
@@ -52,6 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_attachments_conversation_id
 
 CREATE INDEX IF NOT EXISTS idx_attachments_message_id
   ON attachments(message_id);
+
+CREATE INDEX IF NOT EXISTS idx_folders_updated_at
+  ON folders(updated_at DESC, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS system_prompt (
   id INTEGER PRIMARY KEY CHECK (id = 1),

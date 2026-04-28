@@ -2,6 +2,18 @@
 
 All notable changes to Kivrio are documented in this file.
 
+## [2026.4.28] - 2026-04-28
+
+### Added
+- Added release notes for `Kivrio 2026.4.28`.
+
+### Changed
+- Let multimodal models extract mathematical statements from images before Kivrio reroutes supported cases to the local deterministic SymPy pipelines.
+- Fixed immediate image viewing after upload by refreshing attachment links to the stable server URLs instead of leaving revoked temporary blob URLs in the UI.
+- Added folder organization in the sidebar with create, rename, delete, move, and safer collapsed-by-default behavior for conversations.
+- Added a dedicated image viewer page with a top-right close button so opened image attachments can be closed more naturally.
+- Updated the visible application version for `Kivrio 2026.4.28`.
+
 ## [2026.4.27] - 2026-04-27
 
 ### Changed

@@ -68,6 +68,14 @@ const PYTHON_PLOTTING_GUIDANCE = [
   'Si tu fournis du Python, rends un seul bloc ```python``` executable par Kivrio.',
   'Tu peux garder de la marge pour les explications qualitatives, mais pas pour les valeurs mathematiques importantes qui doivent venir du calcul.',
 ].join('\n');
+const MULTIMODAL_EXTRACTION_GUIDANCE = [
+  'Quand une image est fournie, lis uniquement l enonce mathematique utile contenu dans l image.',
+  'Ne resous rien. N explique rien. Ne commente pas.',
+  'Retourne uniquement un JSON compact sur une seule ligne au format {"transcription":"..."}.',
+  'La transcription doit rester concise, mathematique et exploitable par les pipelines locaux de Kivrio.',
+  'Conserve si possible les symboles utiles comme =, +, -, ^, \\int, les bornes, les variables et les systemes.',
+  'Si le contenu n est pas lisible ou pas mathematique, retourne {"transcription":""}.',
+].join('\n');
   const VARIATION_TABLE_HTML_OPEN = '<variation-table-html>';
   const VARIATION_TABLE_HTML_CLOSE = '</variation-table-html>';
   const SYSTEM_SOLVE_HTML_OPEN = '<system-solve-html>';
@@ -1463,19 +1471,105 @@ function formatResolvedSegmentOutput(segment, answerText) {
   return body ? `${heading}\n\n${body}` : heading;
 }
 
-async function collectModelBlockAnswer({ base, model, sys, prompt }) {
+async function collectModelBlockAnswer({
+  base,
+  model,
+  sys,
+  prompt,
+  convId = null,
+  images = [],
+  extraSystemGuidance = '',
+}) {
   const assistantState = createAssistantStreamState();
   for await (const chunk of streamChat({
     base,
     model,
     sys,
     prompt,
-    convId: null,
-    images: [],
+    convId,
+    images,
+    extraSystemGuidance,
   })) {
     mergeAssistantStreamChunk(assistantState, chunk);
   }
   return finalizeAssistantStreamState(assistantState);
+}
+
+function normalizeMultimodalExtractionText(rawText) {
+  let raw = String(rawText || '').trim();
+  if (!raw) return '';
+
+  const fenced = raw.match(/```(?:json|text|txt|markdown)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) raw = fenced[1].trim();
+
+  const parseCandidate = (candidate) => {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== 'object') return '';
+      const value = parsed.transcription ?? parsed.extraction ?? parsed.text ?? parsed.prompt ?? '';
+      return typeof value === 'string' ? value.trim() : '';
+    } catch (_) {
+      return '';
+    }
+  };
+
+  let normalized =
+    parseCandidate(raw)
+    || parseCandidate((raw.match(/\{[\s\S]*\}/) || [])[0] || '')
+    || raw;
+
+  normalized = normalized
+    .replace(/^\s*(?:transcription|texte(?:\s+math(?:e|e)matique)?|enonce)\s*:\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\r/g, '')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+
+  return normalized;
+}
+
+function buildMultimodalExtractionPrompt(userText) {
+  const user = String(userText || '').trim();
+  if (!user) {
+    return 'Lis l image et retourne seulement la transcription mathematique utile dans le JSON demande.';
+  }
+  return [
+    'Consigne utilisateur (ne pas resoudre) :',
+    user,
+    '',
+    'Lis l image et retourne seulement la transcription mathematique utile dans le JSON demande.',
+  ].join('\n');
+}
+
+function buildMultimodalDeterministicPrompt(userText, transcription) {
+  const user = String(userText || '').trim();
+  const extracted = String(transcription || '').trim();
+  if (!extracted) return '';
+  if (!user || user === extracted) return extracted;
+  return `${user}\n\n${extracted}`.trim();
+}
+
+async function extractDeterministicPromptFromImagePayloads({ base, model, userText, imagePayloads }) {
+  if (!Array.isArray(imagePayloads) || !imagePayloads.length) {
+    return { transcription: '', prompt: '', rawAnswer: '' };
+  }
+
+  const modelPayload = await collectModelBlockAnswer({
+    base,
+    model,
+    sys: '',
+    prompt: buildMultimodalExtractionPrompt(userText),
+    convId: null,
+    images: imagePayloads,
+    extraSystemGuidance: MULTIMODAL_EXTRACTION_GUIDANCE,
+  });
+  const rawAnswer = String(modelPayload?.answerText || modelPayload?.reasoningText || '').trim();
+  const transcription = normalizeMultimodalExtractionText(rawAnswer);
+  return {
+    transcription,
+    prompt: buildMultimodalDeterministicPrompt(userText, transcription),
+    rawAnswer,
+  };
 }
 
 async function attemptSegmentedExerciseReply({ content, conversationId, targetBubble, base, model, sys }) {
@@ -1954,9 +2048,32 @@ export async function sendCurrent() {
       await mountHistory();
     } catch (_) {}
 
-    const deterministicPrompt = prepared.deterministicPromptText || prepared.promptText || text;
+    let multimodalExtraction = {
+      transcription: '',
+      prompt: '',
+      rawAnswer: '',
+    };
+    if (Array.isArray(prepared.imagePayloads) && prepared.imagePayloads.length) {
+      try {
+        multimodalExtraction = await extractDeterministicPromptFromImagePayloads({
+          base,
+          model,
+          userText: text,
+          imagePayloads: prepared.imagePayloads,
+        });
+      } catch (err) {
+        console.warn('[Kivrio trace][multimodal-extraction]', err);
+      }
+    }
+
+    const deterministicPrompt =
+      multimodalExtraction.prompt
+      || prepared.deterministicPromptText
+      || prepared.promptText
+      || text;
     const canUseDeterministicPipelines = Boolean(
       prepared.allowDeterministicPipelines
+      || multimodalExtraction.prompt
       || (!prepared.imagePayloads?.length && detachedUploads.length === 0),
     );
     console.info('[Kivrio trace][sendCurrent]', {
@@ -1965,6 +2082,7 @@ export async function sendCurrent() {
       imagePayloadCount: Array.isArray(prepared.imagePayloads) ? prepared.imagePayloads.length : 0,
       allowDeterministicPipelines: Boolean(prepared.allowDeterministicPipelines),
       canUseDeterministicPipelines,
+      multimodalExtractionPreview: tracePromptPreview(multimodalExtraction.transcription),
       deterministicPromptPreview: tracePromptPreview(deterministicPrompt),
     });
     if (canUseDeterministicPipelines) {

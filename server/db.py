@@ -14,6 +14,7 @@ DB_PATH = DATA_DIR / 'kivrio.db'
 SCHEMA_PATH = Path(__file__).resolve().parent / 'schema.sql'
 UPLOADS_DIR = DATA_DIR / 'uploads'
 SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9._-]+')
+UNSET = object()
 
 
 def now_ms() -> int:
@@ -28,6 +29,10 @@ def generate_attachment_id() -> str:
     return f"a{uuid.uuid4().hex[:12]}"
 
 
+def generate_folder_id() -> str:
+    return f"f{uuid.uuid4().hex[:12]}"
+
+
 def connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -37,10 +42,60 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    schema = SCHEMA_PATH.read_text(encoding='utf-8')
     with connect() as conn:
+        ensure_conversations_folder_bootstrap(conn)
+        schema = SCHEMA_PATH.read_text(encoding='utf-8')
         conn.executescript(schema)
+        ensure_folders_schema(conn)
         ensure_messages_columns(conn)
+
+
+def ensure_conversations_folder_bootstrap(conn: sqlite3.Connection) -> None:
+    tables = {
+        str(row['name']).lower()
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    if 'conversations' not in tables:
+        return
+    columns = {
+        str(row['name']).lower()
+        for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
+    }
+    if 'folder_id' not in columns:
+        conn.execute('ALTER TABLE conversations ADD COLUMN folder_id TEXT')
+
+
+def ensure_folders_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS folders (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+        '''
+    )
+    conversation_columns = {
+        str(row['name']).lower()
+        for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
+    }
+    if 'folder_id' not in conversation_columns:
+        conn.execute('ALTER TABLE conversations ADD COLUMN folder_id TEXT')
+    conn.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS idx_conversations_folder_id
+          ON conversations(folder_id)
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS idx_folders_updated_at
+          ON folders(updated_at DESC, created_at DESC)
+        '''
+    )
 
 
 def ensure_messages_columns(conn: sqlite3.Connection) -> None:
@@ -180,12 +235,156 @@ def delete_file(relative_path: str | None) -> None:
         cleanup_directories(path.parent, UPLOADS_DIR)
 
 
+def normalize_folder_name(name: str | None) -> str:
+    value = str(name or '').strip()
+    if not value:
+        raise ValueError('Le nom du dossier est obligatoire.')
+    return value[:80]
+
+
+def folder_exists(conn: sqlite3.Connection, folder_id: str | None) -> bool:
+    value = str(folder_id or '').strip()
+    if not value:
+        return False
+    row = conn.execute(
+        'SELECT id FROM folders WHERE id = ?',
+        (value,),
+    ).fetchone()
+    return row is not None
+
+
+def ensure_folder_name_available(
+    conn: sqlite3.Connection,
+    name: str,
+    *,
+    exclude_id: str | None = None,
+) -> None:
+    params: list[object] = [name.casefold()]
+    query = 'SELECT id FROM folders WHERE lower(name) = ?'
+    if exclude_id:
+        query += ' AND id <> ?'
+        params.append(exclude_id)
+    row = conn.execute(query, params).fetchone()
+    if row is not None:
+        raise ValueError('Un dossier porte deja ce nom.')
+
+
+def list_folders() -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            '''
+            SELECT
+              f.id,
+              f.name,
+              f.created_at,
+              f.updated_at,
+              COUNT(c.id) AS conversation_count
+            FROM folders f
+            LEFT JOIN conversations c ON c.folder_id = f.id AND c.archived = 0
+            GROUP BY f.id
+            ORDER BY f.updated_at DESC, f.created_at DESC
+            '''
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_folder(name: str | None) -> dict:
+    folder_id = generate_folder_id()
+    folder_name = normalize_folder_name(name)
+    ts = now_ms()
+    with connect() as conn:
+        ensure_folder_name_available(conn, folder_name)
+        conn.execute(
+            '''
+            INSERT INTO folders (id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ''',
+            (folder_id, folder_name, ts, ts),
+        )
+        row = conn.execute(
+            '''
+            SELECT id, name, created_at, updated_at
+            FROM folders
+            WHERE id = ?
+            ''',
+            (folder_id,),
+        ).fetchone()
+    return dict(row)
+
+
+def update_folder(folder_id: str, *, name: str | None = None) -> dict | None:
+    folder_key = str(folder_id or '').strip()
+    if not folder_key:
+        return None
+    if name is None:
+        with connect() as conn:
+            row = conn.execute(
+                '''
+                SELECT id, name, created_at, updated_at
+                FROM folders
+                WHERE id = ?
+                ''',
+                (folder_key,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    folder_name = normalize_folder_name(name)
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT id FROM folders WHERE id = ?',
+            (folder_key,),
+        ).fetchone()
+        if row is None:
+            return None
+        ensure_folder_name_available(conn, folder_name, exclude_id=folder_key)
+        conn.execute(
+            '''
+            UPDATE folders
+            SET name = ?, updated_at = ?
+            WHERE id = ?
+            ''',
+            (folder_name, now_ms(), folder_key),
+        )
+        updated = conn.execute(
+            '''
+            SELECT id, name, created_at, updated_at
+            FROM folders
+            WHERE id = ?
+            ''',
+            (folder_key,),
+        ).fetchone()
+    return dict(updated) if updated else None
+
+
+def delete_folder(folder_id: str) -> bool:
+    folder_key = str(folder_id or '').strip()
+    if not folder_key:
+        return False
+    with connect() as conn:
+        row = conn.execute(
+            'SELECT id FROM folders WHERE id = ?',
+            (folder_key,),
+        ).fetchone()
+        if row is None:
+            return False
+        conn.execute(
+            'UPDATE conversations SET folder_id = NULL WHERE folder_id = ?',
+            (folder_key,),
+        )
+        conn.execute(
+            'DELETE FROM folders WHERE id = ?',
+            (folder_key,),
+        )
+    return True
+
+
 def list_conversations(include_archived: bool = False) -> list[dict]:
     where = '' if include_archived else 'WHERE c.archived = 0'
     query = f'''
         SELECT
           c.id,
           c.title,
+          c.folder_id,
           c.created_at,
           c.updated_at,
           c.archived,
@@ -205,7 +404,7 @@ def get_conversation(conversation_id: str) -> dict | None:
     with connect() as conn:
         conversation = conn.execute(
             '''
-            SELECT id, title, created_at, updated_at, archived
+            SELECT id, title, folder_id, created_at, updated_at, archived
             FROM conversations
             WHERE id = ?
             ''',
@@ -265,21 +464,28 @@ def get_conversation(conversation_id: str) -> dict | None:
     }
 
 
-def create_conversation(conversation_id: str | None, title: str | None) -> dict:
+def create_conversation(
+    conversation_id: str | None,
+    title: str | None,
+    folder_id: str | None = None,
+) -> dict:
     ts = now_ms()
     conversation_id = (conversation_id or '').strip() or generate_conversation_id()
     title = (title or '').strip() or 'Nouvelle conversation'
+    folder_key = str(folder_id or '').strip() or None
     with connect() as conn:
+        if folder_key and not folder_exists(conn, folder_key):
+            raise ValueError('Dossier introuvable.')
         conn.execute(
             '''
-            INSERT INTO conversations (id, title, created_at, updated_at, archived)
-            VALUES (?, ?, ?, ?, 0)
+            INSERT INTO conversations (id, title, folder_id, created_at, updated_at, archived)
+            VALUES (?, ?, ?, ?, ?, 0)
             ''',
-            (conversation_id, title, ts, ts),
+            (conversation_id, title, folder_key, ts, ts),
         )
         row = conn.execute(
             '''
-            SELECT id, title, created_at, updated_at, archived
+            SELECT id, title, folder_id, created_at, updated_at, archived
             FROM conversations
             WHERE id = ?
             ''',
@@ -293,31 +499,37 @@ def update_conversation(
     *,
     title: str | None = None,
     archived: int | None = None,
+    folder_id: str | None | object = UNSET,
 ) -> dict | None:
     existing = get_conversation(conversation_id)
     if existing is None:
         return None
 
-    updates = []
-    params: list[object] = []
-    if title is not None:
-        updates.append('title = ?')
-        params.append(title.strip() or 'Nouvelle conversation')
-    if archived is not None:
-        updates.append('archived = ?')
-        params.append(1 if archived else 0)
-    updates.append('updated_at = ?')
-    params.append(now_ms())
-    params.append(conversation_id)
-
     with connect() as conn:
+        updates = []
+        params: list[object] = []
+        if title is not None:
+            updates.append('title = ?')
+            params.append(title.strip() or 'Nouvelle conversation')
+        if archived is not None:
+            updates.append('archived = ?')
+            params.append(1 if archived else 0)
+        if folder_id is not UNSET:
+            folder_key = str(folder_id or '').strip() or None
+            if folder_key and not folder_exists(conn, folder_key):
+                raise ValueError('Dossier introuvable.')
+            updates.append('folder_id = ?')
+            params.append(folder_key)
+        updates.append('updated_at = ?')
+        params.append(now_ms())
+        params.append(conversation_id)
         conn.execute(
             f"UPDATE conversations SET {', '.join(updates)} WHERE id = ?",
             params,
         )
         row = conn.execute(
             '''
-            SELECT id, title, created_at, updated_at, archived
+            SELECT id, title, folder_id, created_at, updated_at, archived
             FROM conversations
             WHERE id = ?
             ''',

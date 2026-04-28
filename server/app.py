@@ -174,6 +174,153 @@ def build_math_failure_payload(*, pipeline: str, exc: Exception) -> dict:
     }
 
 
+def build_attachment_view_html(*, attachment: dict, image_src: str) -> str:
+    filename = str(attachment.get('filename') or 'Image jointe')
+    safe_title = (
+        filename
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+    )
+    safe_src = (
+        str(image_src or '')
+        .replace('&', '&amp;')
+        .replace('"', '&quot;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+    )
+    return f'''<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{safe_title}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #0b0f17;
+      --panel: rgba(15, 23, 42, .92);
+      --border: rgba(148, 163, 184, .18);
+      --text: #f8fafc;
+      --muted: rgba(226, 232, 240, .76);
+      --accent: #60a5fa;
+    }}
+    * {{ box-sizing: border-box; }}
+    html, body {{ margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, Segoe UI, Arial, sans-serif; }}
+    body {{
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }}
+    .viewer-topbar {{
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(8, 12, 19, .98), rgba(8, 12, 19, .88));
+      backdrop-filter: blur(10px);
+    }}
+    .viewer-title {{
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .viewer-close {{
+      width: 38px;
+      height: 38px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, .88);
+      color: var(--text);
+      cursor: pointer;
+      transition: transform .12s ease, background .12s ease, border-color .12s ease;
+    }}
+    .viewer-close:hover,
+    .viewer-close:focus-visible {{
+      background: rgba(30, 41, 59, .96);
+      border-color: rgba(96, 165, 250, .56);
+      transform: scale(1.03);
+      outline: none;
+    }}
+    .viewer-stage {{
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      min-height: 0;
+    }}
+    .viewer-image-wrap {{
+      width: min(100%, 1200px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .32);
+    }}
+    .viewer-image {{
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 170px);
+      object-fit: contain;
+      border-radius: 14px;
+      background: #05070c;
+    }}
+    .viewer-help {{
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }}
+  </style>
+</head>
+<body>
+  <div class="viewer-topbar">
+    <div class="viewer-title" title="{safe_title}">{safe_title}</div>
+    <button class="viewer-close" type="button" aria-label="Fermer cette page" title="Fermer">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+        <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+  <main class="viewer-stage">
+    <div class="viewer-image-wrap">
+      <img class="viewer-image" src="{safe_src}" alt="{safe_title}" />
+      <div class="viewer-help">Cliquez sur la croix pour fermer cette page et revenir a Kivrio si besoin.</div>
+    </div>
+  </main>
+  <script>
+    (function() {{
+      const closeBtn = document.querySelector('.viewer-close');
+      if (!closeBtn) return;
+      closeBtn.addEventListener('click', function() {{
+        try {{ window.close(); }} catch (_) {{}}
+        window.setTimeout(function() {{
+          if (!window.closed) {{
+            if (window.history.length > 1) {{
+              window.history.back();
+              return;
+            }}
+            window.location.replace('/index.html');
+          }}
+        }}, 80);
+      }});
+    }})();
+  </script>
+</body>
+</html>'''
+
+
 def normalize_host_port(value: str | None) -> tuple[str | None, int | None]:
     raw = str(value or '').strip()
     if not raw:
@@ -564,9 +711,19 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                 self.send_json(db.list_conversations())
                 return
 
+            if method == 'GET' and path == '/api/folders':
+                self.send_json(db.list_folders())
+                return
+
             if method == 'POST' and path == '/api/system-prompt':
                 body = self.read_json_body()
                 self.send_json(db.update_system_prompt(body.get('prompt')))
+                return
+
+            if method == 'POST' and path == '/api/folders':
+                body = self.read_json_body()
+                folder = db.create_folder(body.get('name'))
+                self.send_json(folder, status=HTTPStatus.CREATED)
                 return
 
             if method == 'POST' and path == '/api/ocr/pix2text':
@@ -668,6 +825,27 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                 return
 
             parts = [part for part in path.strip('/').split('/') if part]
+            if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'attachments' and parts[3] == 'view':
+                attachment_id = unquote(parts[2])
+                attachment = db.get_attachment(attachment_id)
+                if attachment is None:
+                    self.send_error_json(HTTPStatus.NOT_FOUND, 'Attachment not found.')
+                    return
+                mime_type = str(attachment.get('mime_type') or 'application/octet-stream')
+                if not mime_type.startswith('image/'):
+                    self.send_error_json(HTTPStatus.BAD_REQUEST, 'Cette vue est reservee aux images.')
+                    return
+                image_src = f'/api/attachments/{attachment_id}/content'
+                html = build_attachment_view_html(attachment=attachment, image_src=image_src)
+                payload = html.encode('utf-8')
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(payload)))
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+
             if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'attachments' and parts[3] == 'content':
                 attachment_id = unquote(parts[2])
                 attachment = db.get_attachment(attachment_id)
@@ -688,6 +866,26 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                     mime_type=str(attachment.get('mime_type') or 'application/octet-stream'),
                 )
                 return
+
+            if len(parts) >= 3 and parts[0] == 'api' and parts[1] == 'folders':
+                folder_id = unquote(parts[2])
+
+                if method == 'PATCH' and len(parts) == 3:
+                    body = self.read_json_body()
+                    folder = db.update_folder(folder_id, name=body.get('name'))
+                    if folder is None:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, 'Dossier introuvable.')
+                        return
+                    self.send_json(folder)
+                    return
+
+                if method == 'DELETE' and len(parts) == 3:
+                    deleted = db.delete_folder(folder_id)
+                    if not deleted:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, 'Dossier introuvable.')
+                        return
+                    self.send_json({'ok': True})
+                    return
 
             if len(parts) >= 3 and parts[0] == 'api' and parts[1] == 'conversations':
                 conversation_id = unquote(parts[2])
@@ -763,6 +961,7 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                         conversation_id,
                         title=body.get('title'),
                         archived=body.get('archived'),
+                        folder_id=body.get('folder_id') if 'folder_id' in body else db.UNSET,
                     )
                     if conversation is None:
                         self.send_error_json(HTTPStatus.NOT_FOUND, 'Conversation not found.')
@@ -780,7 +979,11 @@ class KivrioHandler(SimpleHTTPRequestHandler):
 
             if method == 'POST' and path == '/api/conversations':
                 body = self.read_json_body()
-                conversation = db.create_conversation(body.get('id'), body.get('title'))
+                conversation = db.create_conversation(
+                    body.get('id'),
+                    body.get('title'),
+                    body.get('folder_id'),
+                )
                 self.send_json(conversation, status=HTTPStatus.CREATED)
                 return
 

@@ -55,6 +55,10 @@ export function listConversations() {
   return request('/api/conversations');
 }
 
+export function listFolders() {
+  return request('/api/folders');
+}
+
 export function getSystemPrompt() {
   return request('/api/system-prompt');
 }
@@ -78,8 +82,19 @@ export function createConversation(payload) {
   return request('/api/conversations', { method: 'POST', body: payload || {} });
 }
 
+export function createFolder(payload) {
+  return request('/api/folders', { method: 'POST', body: payload || {} });
+}
+
 export function updateConversation(id, payload) {
   return request(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: payload || {},
+  });
+}
+
+export function updateFolder(id, payload) {
+  return request(`/api/folders/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: payload || {},
   });
@@ -113,6 +128,12 @@ export async function uploadConversationAttachments(id, files) {
 
 export function deleteConversation(id) {
   return request(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function deleteFolder(id) {
+  return request(`/api/folders/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
 }

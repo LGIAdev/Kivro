@@ -110,6 +110,43 @@
   background: rgba(255,255,255,.26);
 }
 .side-title{ color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; padding:8px 10px; }
+.folder-block{ margin-bottom:8px; }
+.folder-summary{
+  width:100%;
+  border:0;
+  background:transparent;
+  cursor:pointer;
+  text-align:left;
+}
+.folder-summary:hover{ background:var(--hover); }
+.folder-toggle{ justify-content:flex-start; }
+.folder-chevron{
+  width:14px;
+  height:14px;
+  opacity:.72;
+  transition:transform .12s ease;
+}
+.folder-chevron.open{
+  transform:rotate(90deg);
+}
+.folder-meta{
+  margin-left:auto;
+  padding:2px 8px;
+  border-radius:999px;
+  background:var(--surface-card);
+  border:1px solid var(--border);
+  color:var(--muted);
+  font-size:.78rem;
+  line-height:1.2;
+}
+.folder-conversation-list{
+  margin:2px 0 0 16px;
+  padding-left:10px;
+  border-left:1px solid var(--border);
+}
+.conv-row.nested .conv-link{
+  padding-left:8px;
+}
 .conv-row{ position:relative; display:flex; align-items:center; gap:6px; }
 .conv{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:10px; color:var(--text); text-decoration:none; }
 .conv:hover{ background:var(--hover); }

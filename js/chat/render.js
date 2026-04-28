@@ -1488,6 +1488,33 @@ function attachmentLabel(name){
   return (parts.length > 1 ? parts.at(-1) : 'FILE').slice(0, 4).toUpperCase();
 }
 
+function attachmentOpenHref(attachment){
+  const rawHref = attachment?.url || attachment?.previewUrl || '';
+  if(!rawHref) return '';
+  if(attachment?.isImage && /\/api\/attachments\/[^/]+\/content(?:\?|$)/.test(rawHref)){
+    return rawHref.replace('/content', '/view');
+  }
+  return rawHref;
+}
+
+function bindAttachmentOpen(card, href, attachment){
+  if(!(card instanceof HTMLElement) || !href) return;
+  if(!attachment?.isImage) return;
+  if(!/\/api\/attachments\/[^/]+\/view(?:\?|$)/.test(href)) return;
+
+  card.addEventListener('click', (event) => {
+    if(event.defaultPrevented) return;
+    if(event.button !== 0) return;
+    if(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    event.preventDefault();
+    const viewer = window.open(href, '_blank');
+    if(viewer && typeof viewer.focus === 'function'){
+      viewer.focus();
+    }
+  });
+}
+
 function appendMessageAttachments(container, attachments){
   if(!Array.isArray(attachments) || attachments.length === 0) return;
 
@@ -1495,13 +1522,14 @@ function appendMessageAttachments(container, attachments){
   wrap.className = 'message-attachments';
 
   for(const attachment of attachments){
-    const href = attachment.url || attachment.previewUrl || '';
+    const href = attachmentOpenHref(attachment);
     const card = document.createElement(href ? 'a' : 'div');
     card.className = 'attachment-card';
     if(href){
       card.href = href;
       card.target = '_blank';
       card.rel = 'noreferrer';
+      bindAttachmentOpen(card, href, attachment);
     }
 
     const preview = document.createElement('div');
@@ -1576,7 +1604,7 @@ export function renderMsg(role, text, options = {}){
 
 export function bindMessageRecord(bubble, record){
   if (!(bubble instanceof HTMLElement) || !record) return;
-  syncBubbleMeta(
+  const meta = syncBubbleMeta(
     bubble,
     record.role || bubble.dataset.role || 'user',
     record.content ?? bubble.__kivrioMessageMeta?.text ?? '',
@@ -1588,6 +1616,12 @@ export function bindMessageRecord(bubble, record){
       messageId: record.id ?? record.messageId ?? record.message_id ?? null,
       conversationId: record.conversationId ?? record.conversation_id ?? null,
     },
+  );
+  updateBubbleContent(
+    bubble,
+    meta.role || bubble.dataset.role || 'user',
+    meta.text || '',
+    bubbleMetaToOptions(meta),
   );
 }
 

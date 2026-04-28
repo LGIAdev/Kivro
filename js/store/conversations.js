@@ -3,20 +3,34 @@ import { renderMsg, clearChat } from '../chat/render.js';
 import {
   addConversationMessage,
   createConversation,
+  createFolder as createFolderRequest,
   deleteConversation,
+  deleteFolder as deleteFolderRequest,
   getConversation,
   listConversations,
+  listFolders,
   updateConversation,
   updateConversationMessage,
+  updateFolder as updateFolderRequest,
 } from '../net/conversationsApi.js';
 
 const K_CUR = 'mpai.current.v1';
 let cache = [];
+let foldersCache = [];
+let openFolders = new Set();
 let activeMenu = null;
 let menuEventsBound = false;
 
 function sortCache() {
   cache.sort((a, b) => (b.updatedAt - a.updatedAt) || (b.createdAt - a.createdAt));
+}
+
+function sortFolders() {
+  foldersCache.sort((a, b) => {
+    const byName = a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
+    if (byName !== 0) return byName;
+    return (b.updatedAt - a.updatedAt) || (b.createdAt - a.createdAt);
+  });
 }
 
 function normalizeAttachment(raw) {
@@ -53,6 +67,16 @@ function normalizeMessage(raw) {
   };
 }
 
+function normalizeFolder(raw) {
+  return {
+    id: raw?.id ?? null,
+    name: String(raw?.name ?? 'Nouveau dossier'),
+    createdAt: Number(raw?.createdAt ?? raw?.created_at ?? Date.now()),
+    updatedAt: Number(raw?.updatedAt ?? raw?.updated_at ?? Date.now()),
+    conversationCount: Number(raw?.conversationCount ?? raw?.conversation_count ?? 0),
+  };
+}
+
 function normalizeConversation(raw) {
   const messages = Array.isArray(raw?.messages)
     ? raw.messages.map(normalizeMessage).filter(Boolean)
@@ -61,6 +85,7 @@ function normalizeConversation(raw) {
   return {
     id: raw?.id ?? null,
     title: String(raw?.title ?? 'Nouvelle conversation'),
+    folderId: raw?.folderId ?? raw?.folder_id ?? null,
     createdAt: Number(raw?.createdAt ?? raw?.created_at ?? Date.now()),
     updatedAt: Number(raw?.updatedAt ?? raw?.updated_at ?? Date.now()),
     archived: Number(raw?.archived ?? 0),
@@ -121,6 +146,12 @@ function replaceCacheFromList(list) {
   return cache;
 }
 
+function replaceFoldersFromList(list) {
+  foldersCache = (list || []).map((item) => normalizeFolder(item));
+  sortFolders();
+  return foldersCache;
+}
+
 function upsertConversationPayload(payload) {
   return upsertConversation({
     ...(payload?.conversation || {}),
@@ -145,6 +176,18 @@ function upsertMessageInConversation(conversation, message) {
   conversation.messagesLoaded = true;
   conversation.messageCount = conversation.messages.length;
   return conversation;
+}
+
+function preserveConversationShape(updated, existing) {
+  if (!updated) return updated;
+  updated.messages = existing?.messages || [];
+  updated.messagesLoaded = existing?.messagesLoaded || false;
+  updated.messageCount = Math.max(
+    Number(updated.messageCount || 0),
+    Number(existing?.messageCount || 0),
+    Array.isArray(updated.messages) ? updated.messages.length : 0,
+  );
+  return updated;
 }
 
 function closeActiveMenu() {
@@ -212,6 +255,10 @@ export const Store = {
     return cache.slice();
   },
 
+  folders() {
+    return foldersCache.slice();
+  },
+
   currentId() {
     try {
       return localStorage.getItem(K_CUR);
@@ -233,8 +280,12 @@ export const Store = {
   },
 
   async refresh() {
-    const list = await listConversations();
-    replaceCacheFromList(list);
+    const [conversations, folders] = await Promise.all([
+      listConversations(),
+      listFolders(),
+    ]);
+    replaceCacheFromList(conversations);
+    replaceFoldersFromList(folders);
     return this.load();
   },
 
@@ -266,6 +317,14 @@ export const Store = {
     created.messagesLoaded = true;
     upsertConversation(created);
     this.setCurrent(created.id);
+    return created;
+  },
+
+  async createFolder(input) {
+    const payload = typeof input === 'string' ? { name: input } : (input || {});
+    const created = normalizeFolder(await createFolderRequest(payload));
+    foldersCache.push(created);
+    sortFolders();
     return created;
   },
 
@@ -304,9 +363,7 @@ export const Store = {
 
     if (!conversation.title || /^Nouvelle conversation/i.test(conversation.title)) {
       const updated = normalizeConversation(await updateConversation(id, { title }));
-      updated.messages = conversation.messages || [];
-      updated.messagesLoaded = conversation.messagesLoaded;
-      return upsertConversation(updated);
+      return upsertConversation(preserveConversationShape(updated, conversation));
     }
     return conversation;
   },
@@ -314,15 +371,33 @@ export const Store = {
   async update(id, payload) {
     const conversation = this.get(id);
     const updated = normalizeConversation(await updateConversation(id, payload));
-    updated.messages = conversation?.messages || [];
-    updated.messagesLoaded = conversation?.messagesLoaded || false;
-    return upsertConversation(updated);
+    return upsertConversation(preserveConversationShape(updated, conversation));
+  },
+
+  async updateFolder(id, payload) {
+    const updated = normalizeFolder(await updateFolderRequest(id, payload || {}));
+    const idx = foldersCache.findIndex((item) => item.id === updated.id);
+    if (idx >= 0) foldersCache[idx] = updated;
+    else foldersCache.push(updated);
+    sortFolders();
+    return updated;
   },
 
   async remove(id) {
     await deleteConversation(id);
     cache = cache.filter((item) => item.id !== id);
     if (this.currentId() === id) this.clearCurrent();
+  },
+
+  async removeFolder(id) {
+    await deleteFolderRequest(id);
+    foldersCache = foldersCache.filter((item) => item.id !== id);
+    openFolders.delete(id);
+    cache = cache.map((item) => (
+      item.folderId === id
+        ? { ...item, folderId: null }
+        : item
+    ));
   },
 };
 
@@ -340,6 +415,90 @@ export function fmtTitle(s) {
   return s ? s.slice(0, 64) : 'Nouvelle conversation';
 }
 
+function fmtFolderName(s) {
+  const clean = (s || '').replace(/\s+/g, ' ').trim();
+  return clean ? clean.slice(0, 80) : '';
+}
+
+function normalizeFolderLookupKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('fr');
+}
+
+function resolveFolderFromInput(folders, rawInput) {
+  const formatted = fmtFolderName(rawInput);
+  if (!formatted) {
+    return { status: 'empty', folder: null, formatted };
+  }
+
+  const exact = folders.filter((item) => item.name.localeCompare(formatted, 'fr', { sensitivity: 'base' }) === 0);
+  if (exact.length === 1) {
+    return { status: 'match', folder: exact[0], formatted };
+  }
+
+  const key = normalizeFolderLookupKey(formatted);
+  const normalizedMatches = folders.filter((item) => normalizeFolderLookupKey(item.name) === key);
+  if (normalizedMatches.length === 1) {
+    return { status: 'match', folder: normalizedMatches[0], formatted };
+  }
+  if (normalizedMatches.length > 1) {
+    return { status: 'ambiguous', folder: null, formatted };
+  }
+
+  return { status: 'missing', folder: null, formatted };
+}
+
+function conversationCount(conversation) {
+  return Math.max(Number(conversation?.messageCount || 0), (conversation?.messages || []).length);
+}
+
+function createConversationIcon() {
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('class', 'ico');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('fill', 'none');
+  icon.innerHTML = '<path d="M5 12h14M5 6h14M5 18h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+  return icon;
+}
+
+function createFolderIcon() {
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('class', 'ico');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('fill', 'none');
+  icon.innerHTML = '<path d="M3.75 7.5a2.25 2.25 0 0 1 2.25-2.25h4.082a2.25 2.25 0 0 1 1.59.659l1.244 1.244a2.25 2.25 0 0 0 1.59.659H18a2.25 2.25 0 0 1 2.25 2.25v6.193A2.25 2.25 0 0 1 18 18.5H6a2.25 2.25 0 0 1-2.25-2.25V7.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
+  return icon;
+}
+
+function createChevronIcon(open) {
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('class', `folder-chevron${open ? ' open' : ''}`);
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('fill', 'none');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+  return icon;
+}
+
+function createMenuButton(label, { danger = false, onClick }) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = danger ? 'conv-menu-btn danger' : 'conv-menu-btn';
+  button.setAttribute('role', 'menuitem');
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function listFolderNames() {
+  return Store.folders().map((folder) => folder.name);
+}
+
 export async function mountHistory() {
   const cont = qs('#history');
   if (!cont) return;
@@ -352,83 +511,137 @@ export async function mountHistory() {
       console.warn('[mountHistory] refresh failed', err);
     }
 
-    closeActiveMenu();
-    cont.innerHTML = '';
-    const convs = Store.load()
-      .filter((c) => !c.archived && Math.max(Number(c.messageCount || 0), (c.messages || []).length) > 0)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-
-    const groups = { "Aujourd'hui": [], Hier: [], 'Jours precedents': [] };
-    for (const conversation of convs) {
-      groups[groupLabel(conversation.updatedAt)].push(conversation);
+    const folderBtn = qs('#new-folder');
+    if (folderBtn) {
+      folderBtn.onclick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextName = window.prompt('Nom du nouveau dossier');
+        if (nextName == null) return;
+        const formatted = fmtFolderName(nextName);
+        if (!formatted) return;
+        try {
+          await Store.createFolder({ name: formatted });
+          await render();
+        } catch (err) {
+          window.alert(err?.message || 'Impossible de creer le dossier.');
+        }
+      };
     }
 
-    for (const label of ["Aujourd'hui", 'Hier', 'Jours precedents']) {
-      const arr = groups[label];
-      if (arr.length === 0) continue;
+    closeActiveMenu();
+    cont.innerHTML = '';
 
-      const head = document.createElement('div');
-      head.className = 'side-title';
-      head.textContent = label;
-      cont.appendChild(head);
+    const allFolders = Store.folders();
+    const visibleConversations = Store.load()
+      .filter((conversation) => !conversation.archived && conversationCount(conversation) > 0)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    const folderMap = new Map(allFolders.map((folder) => [folder.id, folder]));
+    const rootConversations = visibleConversations.filter((conversation) => !conversation.folderId || !folderMap.has(conversation.folderId));
 
-      for (const conversation of arr) {
-        const titleLabel = conversation.title || 'Nouvelle conversation';
-        const row = document.createElement('div');
-        row.className = 'conv-row';
+    function buildMovePrompt(conversation) {
+      const names = listFolderNames();
+      const currentFolder = conversation.folderId ? folderMap.get(conversation.folderId) : null;
+      const lines = names.length ? names.map((name) => `- ${name}`).join('\n') : '(aucun dossier)';
+      const current = currentFolder?.name || '';
+      return window.prompt(
+        [
+          current
+            ? `Nom du dossier de destination (actuel : ${current}).`
+            : 'Nom du dossier de destination.',
+          'Laissez vide pour annuler.',
+          '',
+          'Dossiers disponibles :',
+          lines,
+        ].join('\n'),
+        current,
+      );
+    }
 
-        const link = document.createElement('a');
-        link.className = 'conv conv-link';
-        link.href = '#';
-        link.dataset.id = conversation.id;
-        link.title = titleLabel;
-        if (Store.currentId() === conversation.id) link.classList.add('selected');
+    async function handleMoveConversation(conversation) {
+      if (allFolders.length === 0) {
+        window.alert('Creez d’abord un dossier.');
+        return;
+      }
+      const target = buildMovePrompt(conversation);
+      if (target == null) return;
+      const resolution = resolveFolderFromInput(allFolders, target);
+      if (resolution.status === 'empty') return;
+      if (resolution.status === 'ambiguous') {
+        window.alert(
+          [
+            'Plusieurs dossiers ressemblent a ce nom.',
+            'Entrez exactement l’un des dossiers disponibles :',
+            ...listFolderNames().map((name) => `- ${name}`),
+          ].join('\n'),
+        );
+        return;
+      }
+      if (resolution.status === 'missing' || !resolution.folder) {
+        window.alert(
+          [
+            `Dossier introuvable : "${resolution.formatted}".`,
+            'La conversation reste dans la sidebar, sans changement.',
+            '',
+            'Dossiers disponibles :',
+            ...listFolderNames().map((name) => `- ${name}`),
+          ].join('\n'),
+        );
+        return;
+      }
+      openFolders.add(resolution.folder.id);
+      await Store.update(conversation.id, { folder_id: resolution.folder.id });
+      await render();
+    }
 
-        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('class', 'ico');
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('fill', 'none');
-        icon.innerHTML = '<path d="M5 12h14M5 6h14M5 18h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    function buildConversationRow(conversation, { nested = false } = {}) {
+      const titleLabel = conversation.title || 'Nouvelle conversation';
+      const row = document.createElement('div');
+      row.className = nested ? 'conv-row nested' : 'conv-row';
 
-        const title = document.createElement('span');
-        title.className = 'conv-title';
-        title.textContent = titleLabel;
+      const link = document.createElement('a');
+      link.className = 'conv conv-link';
+      link.href = '#';
+      link.dataset.id = conversation.id;
+      link.title = titleLabel;
+      if (Store.currentId() === conversation.id) link.classList.add('selected');
 
-        link.append(icon, title);
-        link.addEventListener('click', async (event) => {
-          event.preventDefault();
-          try {
-            closeActiveMenu();
-            await openConversation(conversation.id);
-            await render();
-          } catch (err) {
-            console.warn('[history] open conversation failed', err);
-          }
-        });
+      const title = document.createElement('span');
+      title.className = 'conv-title';
+      title.textContent = titleLabel;
 
-        const actions = document.createElement('button');
-        actions.type = 'button';
-        actions.className = 'conv-actions-btn';
-        actions.setAttribute('aria-label', `Actions pour ${titleLabel}`);
-        actions.setAttribute('aria-haspopup', 'menu');
-        actions.setAttribute('aria-expanded', 'false');
-        actions.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="18" cy="12" r="1.7"></circle></svg>';
-        actions.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openMenu(row, actions, menu);
-        });
+      link.append(createConversationIcon(), title);
+      link.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+          closeActiveMenu();
+          await openConversation(conversation.id);
+          await render();
+        } catch (err) {
+          console.warn('[history] open conversation failed', err);
+        }
+      });
 
-        const menu = document.createElement('div');
-        menu.className = 'conv-menu';
-        menu.setAttribute('role', 'menu');
+      const actions = document.createElement('button');
+      actions.type = 'button';
+      actions.className = 'conv-actions-btn';
+      actions.setAttribute('aria-label', `Actions pour ${titleLabel}`);
+      actions.setAttribute('aria-haspopup', 'menu');
+      actions.setAttribute('aria-expanded', 'false');
+      actions.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="18" cy="12" r="1.7"></circle></svg>';
 
-        const renameBtn = document.createElement('button');
-        renameBtn.type = 'button';
-        renameBtn.className = 'conv-menu-btn';
-        renameBtn.setAttribute('role', 'menuitem');
-        renameBtn.textContent = 'Modifier';
-        renameBtn.addEventListener('click', async (event) => {
+      const menu = document.createElement('div');
+      menu.className = 'conv-menu';
+      menu.setAttribute('role', 'menu');
+
+      actions.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openMenu(row, actions, menu);
+      });
+
+      const renameBtn = createMenuButton('Modifier', {
+        onClick: async (event) => {
           event.preventDefault();
           event.stopPropagation();
           closeActiveMenu();
@@ -445,14 +658,25 @@ export async function mountHistory() {
           } catch (err) {
             console.warn('[history] rename conversation failed', err);
           }
-        });
+        },
+      });
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'conv-menu-btn danger';
-        deleteBtn.setAttribute('role', 'menuitem');
-        deleteBtn.textContent = 'Supprimer';
-        deleteBtn.addEventListener('click', async (event) => {
+      const moveBtn = createMenuButton('Déplacer vers un dossier', {
+        onClick: async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          closeActiveMenu();
+          try {
+            await handleMoveConversation(conversation);
+          } catch (err) {
+            console.warn('[history] move conversation failed', err);
+          }
+        },
+      });
+
+      const deleteBtn = createMenuButton('Supprimer', {
+        danger: true,
+        onClick: async (event) => {
           event.preventDefault();
           event.stopPropagation();
           closeActiveMenu();
@@ -468,15 +692,149 @@ export async function mountHistory() {
           } catch (err) {
             console.warn('[history] delete conversation failed', err);
           }
+        },
+      });
+
+      menu.append(renameBtn, moveBtn, deleteBtn);
+      row.append(link, actions, menu);
+      return row;
+    }
+
+    if (allFolders.length > 0) {
+      const head = document.createElement('div');
+      head.className = 'side-title';
+      head.textContent = 'Dossiers';
+      cont.appendChild(head);
+
+      for (const folder of allFolders) {
+        const folderConversations = visibleConversations.filter((conversation) => conversation.folderId === folder.id);
+        const isOpen = openFolders.has(folder.id);
+        const block = document.createElement('div');
+        block.className = 'folder-block';
+        if (isOpen) block.classList.add('open');
+
+        const row = document.createElement('div');
+        row.className = 'conv-row folder-row';
+
+        const summary = document.createElement('button');
+        summary.type = 'button';
+        summary.className = 'conv conv-link folder-summary folder-toggle';
+        summary.title = folder.name;
+        summary.setAttribute('aria-expanded', String(isOpen));
+        summary.setAttribute('aria-controls', `folder-list-${folder.id}`);
+        summary.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (openFolders.has(folder.id)) openFolders.delete(folder.id);
+          else openFolders.add(folder.id);
+          render();
+        });
+
+        const title = document.createElement('span');
+        title.className = 'conv-title';
+        title.textContent = folder.name;
+
+        const count = document.createElement('span');
+        count.className = 'folder-meta';
+        count.textContent = String(folderConversations.length);
+
+        summary.append(createChevronIcon(isOpen), createFolderIcon(), title, count);
+
+        const actions = document.createElement('button');
+        actions.type = 'button';
+        actions.className = 'conv-actions-btn';
+        actions.setAttribute('aria-label', `Actions pour le dossier ${folder.name}`);
+        actions.setAttribute('aria-haspopup', 'menu');
+        actions.setAttribute('aria-expanded', 'false');
+        actions.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="18" cy="12" r="1.7"></circle></svg>';
+
+        const menu = document.createElement('div');
+        menu.className = 'conv-menu';
+        menu.setAttribute('role', 'menu');
+
+        actions.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openMenu(row, actions, menu);
+        });
+
+        const renameBtn = createMenuButton('Renommer le dossier', {
+          onClick: async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeActiveMenu();
+
+            const nextName = window.prompt('Renommer le dossier', folder.name);
+            if (nextName == null) return;
+            const formatted = fmtFolderName(nextName);
+            if (!formatted) return;
+
+            try {
+              await Store.updateFolder(folder.id, { name: formatted });
+              await render();
+            } catch (err) {
+              window.alert(err?.message || 'Impossible de renommer le dossier.');
+            }
+          },
+        });
+
+        const deleteBtn = createMenuButton('Supprimer le dossier', {
+          danger: true,
+          onClick: async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeActiveMenu();
+
+            const ok = window.confirm(`Supprimer le dossier "${folder.name}" ? Les conversations reviendront hors dossier.`);
+            if (!ok) return;
+
+            try {
+              await Store.removeFolder(folder.id);
+              await render();
+            } catch (err) {
+              window.alert(err?.message || 'Impossible de supprimer le dossier.');
+            }
+          },
         });
 
         menu.append(renameBtn, deleteBtn);
-        row.append(link, actions, menu);
-        cont.appendChild(row);
+        row.append(summary, actions, menu);
+        block.appendChild(row);
+
+        if (folderConversations.length > 0 && isOpen) {
+          const list = document.createElement('div');
+          list.className = 'folder-conversation-list';
+          list.id = `folder-list-${folder.id}`;
+          for (const conversation of folderConversations) {
+            list.appendChild(buildConversationRow(conversation, { nested: true }));
+          }
+          block.appendChild(list);
+        }
+
+        cont.appendChild(block);
       }
     }
 
-    if (convs.length === 0) {
+    const groups = { "Aujourd'hui": [], Hier: [], 'Jours precedents': [] };
+    for (const conversation of rootConversations) {
+      groups[groupLabel(conversation.updatedAt)].push(conversation);
+    }
+
+    for (const label of ["Aujourd'hui", 'Hier', 'Jours precedents']) {
+      const arr = groups[label];
+      if (arr.length === 0) continue;
+
+      const head = document.createElement('div');
+      head.className = 'side-title';
+      head.textContent = label;
+      cont.appendChild(head);
+
+      for (const conversation of arr) {
+        cont.appendChild(buildConversationRow(conversation));
+      }
+    }
+
+    if (allFolders.length === 0 && rootConversations.length === 0) {
       const head = document.createElement('div');
       head.className = 'side-title';
       head.textContent = "Aujourd'hui";
