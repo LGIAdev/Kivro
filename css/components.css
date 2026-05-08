@@ -487,6 +487,27 @@
 }
 
 /* ===================== 6) Barre d’invite (composer) =============== */
+.composer-dock{
+  flex:0 0 auto;
+  position:sticky;
+  bottom:0;
+  z-index:40;
+  width:100%;
+  padding:12px 0 16px;
+  background:linear-gradient(180deg, rgba(11, 13, 18, 0), var(--bg) 34%);
+}
+.main.composer-idle .center{
+  flex:0 0 auto;
+  min-height:0;
+  overflow:visible;
+  padding-bottom:6px;
+}
+.main.composer-idle .composer-dock{
+  position:static;
+  bottom:auto;
+  padding:12px 0 16px;
+  background:transparent;
+}
 .composer-card{
   background:var(--surface-field);
   border:1px solid var(--border);
