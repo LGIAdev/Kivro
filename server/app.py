@@ -643,7 +643,7 @@ class KivrioHandler(SimpleHTTPRequestHandler):
                     return
 
             if method == 'GET' and path == '/api/health':
-                self.send_json({'ok': True, 'db': 'ready'})
+                self.send_json({'ok': True, 'app': 'kivrio', 'title': 'Kivrio', 'db': 'ready'})
                 return
 
             if method == 'GET' and path == '/api/auth/status':

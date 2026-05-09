@@ -10,11 +10,13 @@ Kivrio is an open-source interface for running and managing AI models locally vi
 It provides a desktop-style web UI with math rendering, local conversation history, and a fully local persistence layer.
 
 Status: project under active development.
+Version: Kivrio 2026.4.29.1.
 
 ---
 
 ## Releases
 
+- [Kivrio 2026.4.29.1](releases/Kivrio-2026.4.29.1.md)
 - [Kivrio 2026.4.29](releases/Kivrio-2026.4.29.md)
 - [Kivrio 2026.4.28](releases/Kivrio-2026.4.28.md)
 - [Kivrio 2026.4.27](releases/Kivrio-2026.4.27.md)
